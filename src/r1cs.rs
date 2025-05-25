@@ -7,7 +7,7 @@ pub struct Constraint<F: Field> {
     pub c: Vec<F>,
 }
 
-struct R1CS<F: Field> {
+pub struct R1CS<F: Field> {
     pub constraints: Vec<Constraint<F>>,
     pub variables: Vec<String>,
 }

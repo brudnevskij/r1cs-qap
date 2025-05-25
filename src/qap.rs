@@ -1,8 +1,9 @@
+use crate::r1cs::R1CS;
 use ark_ff::Field;
 use ark_poly::DenseUVPolynomial;
-use ark_poly::polynomial::Polynomial;
+use ark_poly::Polynomial;
 use ark_poly::univariate::DensePolynomial;
-use ark_std::ops::Neg;
+
 
 struct QAP<F: Field> {
     target_poly: DensePolynomial<F>,
@@ -32,6 +33,50 @@ pub fn get_vanishing_polynomial<F: Field>(roots: Vec<F>) -> DensePolynomial<F> {
     polynomial
 }
 
+impl<F: Field> From<&R1CS<F>> for QAP<F> {
+    fn from(value: &R1CS<F>) -> Self {
+        let mut a = vec![];
+        let mut b = vec![];
+        let mut c = vec![];
+
+        for var_index in 0..value.variables.len() {
+            let mut a_domain_points = vec![];
+            let mut a_values = vec![];
+
+            let mut b_domain_points = vec![];
+            let mut b_values = vec![];
+
+            let mut c_domain_points = vec![];
+            let mut c_values = vec![];
+
+            for (i, constraint) in value.constraints.iter().enumerate() {
+                a_domain_points.push(F::from(i as i32));
+                b_domain_points.push(F::from(i as i32));
+                c_domain_points.push(F::from(i as i32));
+
+                a_values.push(constraint.a[var_index].clone());
+                b_values.push(constraint.b[var_index].clone());
+                c_values.push(constraint.c[var_index].clone());
+            }
+            a.push(interpolate_lagrange(&a_domain_points, &a_values));
+            b.push(interpolate_lagrange(&b_domain_points, &b_values));
+            c.push(interpolate_lagrange(&c_domain_points, &c_values));
+        }
+
+        let target_poly =
+            get_vanishing_polynomial((1..value.constraints.len()).map(|n| F::from(n as i32)).collect());
+        Self {
+            target_poly,
+            a,
+            b,
+            c,
+        }
+    }
+}
+
+fn interpolate_lagrange<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
+    DensePolynomial::from_coefficients_vec(vec![F::one()])
+}
 #[cfg(test)]
 mod test {
     use super::get_vanishing_polynomial;
