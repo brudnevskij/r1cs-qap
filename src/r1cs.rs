@@ -118,7 +118,7 @@ impl<F: Field> Display for R1CS<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::{Field, Zero, One};
+    use ark_ff::{Zero, One};
     use ark_bls12_381::Fr;
 
     #[test]
