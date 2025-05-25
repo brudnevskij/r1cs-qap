@@ -1,3 +1,4 @@
+mod qap;
 mod r1cs;
 
 fn main() {
