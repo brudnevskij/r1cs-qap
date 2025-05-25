@@ -2,7 +2,9 @@ use crate::r1cs::R1CS;
 use ark_ff::Field;
 use ark_poly::DenseUVPolynomial;
 use ark_poly::Polynomial;
+use ark_poly::univariate::DenseOrSparsePolynomial;
 use ark_poly::univariate::DensePolynomial;
+use ark_std::Zero;
 use std::ops::Add;
 
 struct QAP<F: Field> {
@@ -19,6 +21,33 @@ impl<F: Field> QAP<F> {
             b: vec![],
             c: vec![],
         }
+    }
+
+    pub fn is_satisfied(&self, witness: &[F]) -> bool {
+        let mut a_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
+        let mut b_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
+        let mut c_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
+
+        for (i, a) in self.a.iter().enumerate() {
+            a_polynomial = a_polynomial
+                + a.naive_mul(&DensePolynomial::from_coefficients_vec(vec![witness[i]]));
+        }
+        for (i, b) in self.b.iter().enumerate() {
+            b_polynomial = b_polynomial
+                + b.naive_mul(&DensePolynomial::from_coefficients_vec(vec![witness[i]]));
+        }
+        for (i, c) in self.c.iter().enumerate() {
+            c_polynomial = c_polynomial
+                + c.naive_mul(&DensePolynomial::from_coefficients_vec(vec![witness[i]]))
+        }
+
+        let poly = a_polynomial.naive_mul(&b_polynomial) - c_polynomial;
+
+        let d = DenseOrSparsePolynomial::from(poly);
+        let (_, remainder) = d
+            .divide_with_q_and_r(&DenseOrSparsePolynomial::from(&self.target_poly))
+            .unwrap();
+        remainder.is_zero()
     }
 }
 
@@ -63,8 +92,8 @@ impl<F: Field> From<&R1CS<F>> for QAP<F> {
         }
 
         let target_poly = get_vanishing_polynomial(
-            (1..=value.constraints.len())
-                .map(|n| F::from(n as i32))
+            (0..value.constraints.len())
+                .map(|i| F::from(i as u64))
                 .collect(),
         );
         Self {
@@ -105,9 +134,9 @@ fn interpolate_lagrange<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
 
 #[cfg(test)]
 mod test {
+    use super::get_vanishing_polynomial;
     use ark_ff::Field;
     use ark_poly::Polynomial;
-    use super::get_vanishing_polynomial;
     #[test]
     fn test_get_vanishing_polynomial() {
         use ark_bls12_381::Fr;
@@ -149,9 +178,9 @@ mod test {
 
     #[test]
     fn test_r1cs_to_qap_structure() {
-        use ark_bls12_381::Fr;
-        use crate::r1cs::R1CS;
         use super::QAP;
+        use crate::r1cs::R1CS;
+        use ark_bls12_381::Fr;
 
         let mut r1cs = R1CS::<Fr>::new();
 
@@ -162,19 +191,38 @@ mod test {
         let out = r1cs.add_variable("~out".to_string());
 
         // x * x = x_sq
-        r1cs.add_constraint(unit(x, r1cs.variables.len()), unit(x, r1cs.variables.len()), unit(x_sq, r1cs.variables.len()));
+        r1cs.add_constraint(
+            unit(x, r1cs.variables.len()),
+            unit(x, r1cs.variables.len()),
+            unit(x_sq, r1cs.variables.len()),
+        );
 
         // x_sq * x = x_cb
-        r1cs.add_constraint(unit(x_sq, r1cs.variables.len()), unit(x, r1cs.variables.len()), unit(x_cb, r1cs.variables.len()));
+        r1cs.add_constraint(
+            unit(x_sq, r1cs.variables.len()),
+            unit(x, r1cs.variables.len()),
+            unit(x_cb, r1cs.variables.len()),
+        );
 
         // x_cb + x = sym_1
-        let a3 = add(unit(x_cb, r1cs.variables.len()), unit(x, r1cs.variables.len()));
-        r1cs.add_constraint(a3, unit(0, r1cs.variables.len()), unit(sym_1, r1cs.variables.len()));
+        let a3 = add(
+            unit(x_cb, r1cs.variables.len()),
+            unit(x, r1cs.variables.len()),
+        );
+        r1cs.add_constraint(
+            a3,
+            unit(0, r1cs.variables.len()),
+            unit(sym_1, r1cs.variables.len()),
+        );
 
         // sym_1 + 5 = out
         let mut a4 = unit(sym_1, r1cs.variables.len());
         a4[0] = Fr::from(5); // constant term
-        r1cs.add_constraint(a4, unit(0, r1cs.variables.len()), unit(out, r1cs.variables.len()));
+        r1cs.add_constraint(
+            a4,
+            unit(0, r1cs.variables.len()),
+            unit(out, r1cs.variables.len()),
+        );
 
         // Now convert to QAP
         let qap = QAP::from(&r1cs);
@@ -186,6 +234,19 @@ mod test {
 
         // Check target_poly degree (should be 4 for 4 constraints)
         assert_eq!(qap.target_poly.degree(), 4);
-    }
 
+        let witness = vec![
+            Fr::from(1u32),
+            Fr::from(3u32),
+            Fr::from(9u32),
+            Fr::from(27u32),
+            Fr::from(30u32),
+            Fr::from(35u32),
+        ];
+
+        assert!(
+            qap.is_satisfied(&witness),
+            "R1CS should be satisfied by this witness"
+        );
+    }
 }
