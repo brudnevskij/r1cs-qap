@@ -28,6 +28,24 @@ impl<F: Field> R1CS<F> {
     pub fn add_constraint(&mut self, a: Vec<F>, b: Vec<F>, c: Vec<F>) {
         self.constraints.push(Constraint { a, b, c });
     }
+
+
+    pub fn is_satisfied(&self, witness: &[F]) -> bool {
+        for constraint in &self.constraints {
+            let a = inner_product(&constraint.a, witness);
+            let b = inner_product(&constraint.b, witness);
+            let c = inner_product(&constraint.c, witness);
+
+            if a*b != c {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn inner_product<F: Field>(a: &[F], b: &[F]) -> F {
+    a.iter().zip(b).map(|(x,y)| (*x)*(*y)).sum()
 }
 
 fn format_side<F: Field>(coefficients: &[F], variables: &Vec<String>) -> String {
@@ -69,8 +87,7 @@ mod tests {
     use ark_bls12_381::Fr;
     use ark_ff::{One, Zero};
 
-    #[test]
-    fn test_r1cs_display() {
+    fn cubic_constraint_system()->R1CS<Fr>{
         // Create constraints for x**3 + x + 5 = 35
         let mut r1cs = R1CS::<Fr>::new();
         r1cs.add_variable("x".to_string());
@@ -187,7 +204,12 @@ mod tests {
             Fr::one(),
         ];
         r1cs.add_constraint(a, b, c);
+        r1cs
+    }
 
+    #[test]
+    fn test_r1cs_display() {
+        let r1cs = cubic_constraint_system();
         let display_output = format!("{}", r1cs);
         println!("{}", display_output);
 
@@ -196,4 +218,25 @@ mod tests {
         assert!(display_output.contains("(x + x_cb) * (1) = (sym_1)"));
         assert!(display_output.contains("(5 + sym_1) * (1) = (~out)"));
     }
+
+    #[test]
+    fn test_cubic_constraint_system_satisfied() {
+        use ark_bls12_381::Fr;
+        use ark_ff::Field;
+
+        let r1cs = cubic_constraint_system();
+
+        // witness = [1, 3, 9, 27, 30, 35]
+        let witness = vec![
+            Fr::from(1u32),
+            Fr::from(3u32),
+            Fr::from(9u32),
+            Fr::from(27u32),
+            Fr::from(30u32),
+            Fr::from(35u32),
+        ];
+
+        assert!(r1cs.is_satisfied(&witness), "R1CS should be satisfied by this witness");
+    }
+
 }
