@@ -29,14 +29,13 @@ impl<F: Field> R1CS<F> {
         self.constraints.push(Constraint { a, b, c });
     }
 
-
     pub fn is_satisfied(&self, witness: &[F]) -> bool {
         for constraint in &self.constraints {
             let a = inner_product(&constraint.a, witness);
             let b = inner_product(&constraint.b, witness);
             let c = inner_product(&constraint.c, witness);
 
-            if a*b != c {
+            if a * b != c {
                 return false;
             }
         }
@@ -45,7 +44,7 @@ impl<F: Field> R1CS<F> {
 }
 
 fn inner_product<F: Field>(a: &[F], b: &[F]) -> F {
-    a.iter().zip(b).map(|(x,y)| (*x)*(*y)).sum()
+    a.iter().zip(b).map(|(x, y)| (*x) * (*y)).sum()
 }
 
 fn format_side<F: Field>(coefficients: &[F], variables: &Vec<String>) -> String {
@@ -87,7 +86,7 @@ mod tests {
     use ark_bls12_381::Fr;
     use ark_ff::{One, Zero};
 
-    fn cubic_constraint_system()->R1CS<Fr>{
+    fn cubic_constraint_system() -> R1CS<Fr> {
         // Create constraints for x**3 + x + 5 = 35
         let mut r1cs = R1CS::<Fr>::new();
         r1cs.add_variable("x".to_string());
@@ -236,7 +235,9 @@ mod tests {
             Fr::from(35u32),
         ];
 
-        assert!(r1cs.is_satisfied(&witness), "R1CS should be satisfied by this witness");
+        assert!(
+            r1cs.is_satisfied(&witness),
+            "R1CS should be satisfied by this witness"
+        );
     }
-
 }
