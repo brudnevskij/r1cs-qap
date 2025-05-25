@@ -63,7 +63,7 @@ impl<F: Field> From<&R1CS<F>> for QAP<F> {
         }
 
         let target_poly = get_vanishing_polynomial(
-            (1..value.constraints.len())
+            (1..=value.constraints.len())
                 .map(|n| F::from(n as i32))
                 .collect(),
         );
@@ -105,6 +105,8 @@ fn interpolate_lagrange<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
 
 #[cfg(test)]
 mod test {
+    use ark_ff::Field;
+    use ark_poly::Polynomial;
     use super::get_vanishing_polynomial;
     #[test]
     fn test_get_vanishing_polynomial() {
@@ -135,4 +137,55 @@ mod test {
 
         assert_eq!(poly.coeffs, expected);
     }
+    fn unit<F: Field>(index: usize, len: usize) -> Vec<F> {
+        let mut vec = vec![F::zero(); len];
+        vec[index] = F::one();
+        vec
+    }
+
+    fn add<F: Field>(a: Vec<F>, b: Vec<F>) -> Vec<F> {
+        a.into_iter().zip(b).map(|(x, y)| x + y).collect()
+    }
+
+    #[test]
+    fn test_r1cs_to_qap_structure() {
+        use ark_bls12_381::Fr;
+        use crate::r1cs::R1CS;
+        use super::QAP;
+
+        let mut r1cs = R1CS::<Fr>::new();
+
+        let x = r1cs.add_variable("x".to_string());
+        let x_sq = r1cs.add_variable("x_sq".to_string());
+        let x_cb = r1cs.add_variable("x_cb".to_string());
+        let sym_1 = r1cs.add_variable("sym_1".to_string());
+        let out = r1cs.add_variable("~out".to_string());
+
+        // x * x = x_sq
+        r1cs.add_constraint(unit(x, r1cs.variables.len()), unit(x, r1cs.variables.len()), unit(x_sq, r1cs.variables.len()));
+
+        // x_sq * x = x_cb
+        r1cs.add_constraint(unit(x_sq, r1cs.variables.len()), unit(x, r1cs.variables.len()), unit(x_cb, r1cs.variables.len()));
+
+        // x_cb + x = sym_1
+        let a3 = add(unit(x_cb, r1cs.variables.len()), unit(x, r1cs.variables.len()));
+        r1cs.add_constraint(a3, unit(0, r1cs.variables.len()), unit(sym_1, r1cs.variables.len()));
+
+        // sym_1 + 5 = out
+        let mut a4 = unit(sym_1, r1cs.variables.len());
+        a4[0] = Fr::from(5); // constant term
+        r1cs.add_constraint(a4, unit(0, r1cs.variables.len()), unit(out, r1cs.variables.len()));
+
+        // Now convert to QAP
+        let qap = QAP::from(&r1cs);
+
+        // Check lengths
+        assert_eq!(qap.a.len(), r1cs.variables.len());
+        assert_eq!(qap.b.len(), r1cs.variables.len());
+        assert_eq!(qap.c.len(), r1cs.variables.len());
+
+        // Check target_poly degree (should be 4 for 4 constraints)
+        assert_eq!(qap.target_poly.degree(), 4);
+    }
+
 }
