@@ -30,7 +30,7 @@ impl<F: Field> R1CS<F> {
     }
 }
 
-fn format_side<F:Field>(coefficients: &[F], variables: &Vec<String>) -> String {
+fn format_side<F: Field>(coefficients: &[F], variables: &Vec<String>) -> String {
     let mut side = vec![];
 
     if !coefficients[0].is_zero() {
@@ -59,16 +59,15 @@ impl<F: Field> Display for R1CS<F> {
             let c = format_side(&constraint.c, &self.variables);
             r1cs_equations.push(format!("{} * {} = {}", a, b, c));
         }
-        write!(f,"{}", r1cs_equations.join("\n"))
+        write!(f, "{}", r1cs_equations.join("\n"))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::{Zero, One};
     use ark_bls12_381::Fr;
+    use ark_ff::{One, Zero};
 
     #[test]
     fn test_r1cs_display() {
@@ -80,30 +79,113 @@ mod tests {
         r1cs.add_variable("sym_1".to_string());
         r1cs.add_variable("~out".to_string());
 
-
         // vars = [~one, x, x_sq, x_cb, sym_1, ~out]
         // x*x = x_sq
-        let  a = vec![Fr::zero(), Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
-        let  b = vec![Fr::zero(), Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
-        let  c = vec![Fr::zero(), Fr::zero(), Fr::one(), Fr::zero(), Fr::zero(), Fr::zero()];
+        let a = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
         r1cs.add_constraint(a, b, c);
 
         // x_sq * x = x_cb
-        let  a = vec![Fr::zero(), Fr::zero(), Fr::one(), Fr::zero(), Fr::zero(), Fr::zero()];
-        let  b = vec![Fr::zero(), Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
-        let  c = vec![Fr::zero(), Fr::zero(), Fr::zero(), Fr::one(), Fr::zero(), Fr::zero()];
+        let a = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
         r1cs.add_constraint(a, b, c);
 
         // x_cb + x = sym_1
-        let  a = vec![Fr::zero(), Fr::one(), Fr::zero(), Fr::one(), Fr::zero(), Fr::zero()];
-        let  b = vec![Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
-        let  c = vec![Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::one(), Fr::zero()];
+        let a = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+        ];
         r1cs.add_constraint(a, b, c);
 
         // sym_1 + 5 = out
-        let  a = vec![Fr::from(5), Fr::zero(), Fr::zero(), Fr::zero(), Fr::one(), Fr::zero()];
-        let  b = vec![Fr::one(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero()];
-        let  c = vec![Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::zero(), Fr::one()];
+        let a = vec![
+            Fr::from(5),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+        ];
         r1cs.add_constraint(a, b, c);
 
         let display_output = format!("{}", r1cs);
