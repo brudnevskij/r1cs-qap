@@ -9,7 +9,6 @@ pub struct Constraint<F: Field> {
 
 struct R1CS<F: Field> {
     pub constraints: Vec<Constraint<F>>,
-    pub num_variables: usize,
     pub variables: Vec<String>,
 }
 
@@ -17,15 +16,13 @@ impl<F: Field> R1CS<F> {
     pub fn new() -> Self {
         Self {
             constraints: vec![],
-            num_variables: 0,
             variables: vec!["~one".to_string()],
         }
     }
 
     pub fn add_variable(&mut self, name: String) -> usize {
         self.variables.push(name);
-        self.num_variables += 1;
-        self.num_variables
+        self.variables.len() - 1
     }
 
     pub fn add_constraint(&mut self, a: Vec<F>, b: Vec<F>, c: Vec<F>) {
@@ -33,82 +30,34 @@ impl<F: Field> R1CS<F> {
     }
 }
 
+fn format_side<F:Field>(coefficients: &[F], variables: &Vec<String>) -> String {
+    let mut side = vec![];
+
+    if !coefficients[0].is_zero() {
+        side.push(coefficients[0].to_string());
+    }
+
+    for (i, var) in variables.iter().enumerate().skip(1) {
+        let coeff = &coefficients[i];
+        if !coeff.is_zero() {
+            if coeff == &F::ONE {
+                side.push(var.clone());
+            } else {
+                side.push(format!("{}*{}", coeff, var));
+            }
+        }
+    }
+    format!("({})", side.join(" + "))
+}
+
 impl<F: Field> Display for R1CS<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut r1cs_equations: Vec<String> = vec![];
         for constraint in &self.constraints {
-            let mut a_buffer = String::from("(");
-            let mut b_buffer = String::from("(");
-            let mut c_buffer = String::from("(");
-
-            // adding constants if present
-            if constraint.a[0] != F::ZERO {
-                a_buffer.push_str(&&constraint.a[0].to_string());
-            }
-            if constraint.b[0] != F::ZERO {
-                b_buffer.push_str(&constraint.b[0].to_string());
-            }
-            if constraint.c[0] != F::ZERO {
-                c_buffer.push_str(&constraint.c[0].to_string());
-            }
-            // handling rest of the variables
-            for (i, variable) in self.variables.iter().enumerate().skip(1){
-                // A
-                let mut a_side = String::new();
-                let coeff:F = constraint.a[i];
-
-                if !coeff.is_zero() {
-                    a_side = if coeff == F::ONE {
-                        variable.clone()
-                    } else {
-                        format!("{}*{}", coeff, variable)
-                    };
-
-                    if a_buffer == "(" {
-                        a_buffer.push_str(&a_side);
-                    } else {
-                        a_buffer.push_str(&format!(" + {}", a_side));
-                    }
-                }
-
-                // B
-                let mut b_side = String::new();
-                let coeff: F = constraint.b[i];
-
-                if !coeff.is_zero() {
-                    b_side = if coeff == F::ONE {
-                        variable.clone()
-                    } else {
-                        format!("{}*{}", coeff, variable)
-                    };
-
-                    if b_buffer == "(" {
-                        b_buffer.push_str(&b_side);
-                    } else {
-                        b_buffer.push_str(&format!(" + {}", b_side));
-                    }
-                }
-
-                // C
-                let mut c_side = String::new();
-                let coeff: F = constraint.c[i];
-
-                if !coeff.is_zero() {
-                    c_side = if coeff == F::ONE {
-                        variable.clone()
-                    } else {
-                        format!("{}*{}", coeff, variable)
-                    };
-
-                    if c_buffer == "(" {
-                        c_buffer.push_str(&c_side);
-                    } else {
-                        c_buffer.push_str(&format!(" + {}", c_side));
-                    }
-                }
-            }
-
-            r1cs_equations.push(format!("{}) * {}) = {})", a_buffer, b_buffer, c_buffer));
+            let a = format_side(&constraint.a, &self.variables);
+            let b = format_side(&constraint.b, &self.variables);
+            let c = format_side(&constraint.c, &self.variables);
+            r1cs_equations.push(format!("{} * {} = {}", a, b, c));
         }
         write!(f,"{}", r1cs_equations.join("\n"))
     }
