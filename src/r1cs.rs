@@ -7,7 +7,7 @@ pub struct Constraint<F: Field> {
     pub c: Vec<F>,
 }
 
-pub enum  VariableType {
+pub enum VariableType {
     Public,
     Intermediate,
     Private,
@@ -100,9 +100,9 @@ impl<F: Field> Display for R1CS<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::r1cs::VariableType::{Intermediate, Private, Public};
     use ark_bls12_381::Fr;
     use ark_ff::{One, Zero};
-    use crate::r1cs::VariableType::{Intermediate, Private, Public};
 
     fn cubic_constraint_system() -> R1CS<Fr> {
         // Create constraints for x**3 + x + 5 = 35
@@ -278,8 +278,8 @@ mod tests {
     fn test_add_variable_private_append_position() {
         let mut r1cs = R1CS::<Fr>::new();
 
-        r1cs.add_variable("x".to_string(), Public);  // idx 1
-        r1cs.add_variable("y".to_string(), Public);  // idx 2
+        r1cs.add_variable("x".to_string(), Public); // idx 1
+        r1cs.add_variable("y".to_string(), Public); // idx 2
         let idx_z = r1cs.add_variable("z".to_string(), Private); // should be 3
 
         assert_eq!(r1cs.variables[idx_z], "z");
@@ -291,7 +291,7 @@ mod tests {
     fn test_add_variable_intermediate_append_position() {
         let mut r1cs = R1CS::<Fr>::new();
 
-        r1cs.add_variable("a".to_string(), Public);       // idx 1
+        r1cs.add_variable("a".to_string(), Public); // idx 1
         let idx_tmp = r1cs.add_variable("tmp".to_string(), Intermediate); // should be 2
 
         assert_eq!(r1cs.variables[idx_tmp], "tmp");

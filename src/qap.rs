@@ -8,14 +8,16 @@ use ark_std::Zero;
 use std::ops::Add;
 
 pub struct QAP<F: Field> {
-    target_poly: DensePolynomial<F>,
-    a: Vec<DensePolynomial<F>>,
-    b: Vec<DensePolynomial<F>>,
-    c: Vec<DensePolynomial<F>>,
+    pub public_variables_count: usize,
+    pub target_poly: DensePolynomial<F>,
+    pub a: Vec<DensePolynomial<F>>,
+    pub b: Vec<DensePolynomial<F>>,
+    pub c: Vec<DensePolynomial<F>>,
 }
 impl<F: Field> QAP<F> {
     pub fn new(target_poly: DensePolynomial<F>) -> QAP<F> {
         Self {
+            public_variables_count: 0,
             target_poly,
             a: vec![],
             b: vec![],
@@ -97,6 +99,7 @@ impl<F: Field> From<&R1CS<F>> for QAP<F> {
                 .collect(),
         );
         Self {
+            public_variables_count: value.public_variables_count,
             target_poly,
             a,
             b,
@@ -135,9 +138,9 @@ fn interpolate_lagrange<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
 #[cfg(test)]
 mod test {
     use super::get_vanishing_polynomial;
+    use crate::r1cs::VariableType::Public;
     use ark_ff::Field;
     use ark_poly::Polynomial;
-    use crate::r1cs::VariableType::Public;
 
     #[test]
     fn test_get_vanishing_polynomial() {
