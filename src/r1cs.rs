@@ -7,9 +7,16 @@ pub struct Constraint<F: Field> {
     pub c: Vec<F>,
 }
 
+pub enum  VariableType {
+    Public,
+    Intermediate,
+    Private,
+}
+
 pub struct R1CS<F: Field> {
     pub constraints: Vec<Constraint<F>>,
     pub variables: Vec<String>,
+    pub public_variables_count: usize,
 }
 
 impl<F: Field> R1CS<F> {
@@ -17,12 +24,22 @@ impl<F: Field> R1CS<F> {
         Self {
             constraints: vec![],
             variables: vec!["~one".to_string()],
+            public_variables_count: 0,
         }
     }
 
-    pub fn add_variable(&mut self, name: String) -> usize {
-        self.variables.push(name);
-        self.variables.len() - 1
+    pub fn add_variable(&mut self, name: String, variable_type: VariableType) -> usize {
+        match variable_type {
+            VariableType::Public => {
+                self.public_variables_count += 1;
+                self.variables.insert(self.public_variables_count, name);
+                self.variables.len() - 1
+            }
+            _ => {
+                self.variables.push(name);
+                self.variables.len() - 1
+            }
+        }
     }
 
     pub fn add_constraint(&mut self, a: Vec<F>, b: Vec<F>, c: Vec<F>) {
@@ -85,15 +102,16 @@ mod tests {
     use super::*;
     use ark_bls12_381::Fr;
     use ark_ff::{One, Zero};
+    use crate::r1cs::VariableType::{Intermediate, Private, Public};
 
     fn cubic_constraint_system() -> R1CS<Fr> {
         // Create constraints for x**3 + x + 5 = 35
         let mut r1cs = R1CS::<Fr>::new();
-        r1cs.add_variable("x".to_string());
-        r1cs.add_variable("x_sq".to_string());
-        r1cs.add_variable("x_cb".to_string());
-        r1cs.add_variable("sym_1".to_string());
-        r1cs.add_variable("~out".to_string());
+        r1cs.add_variable("x".to_string(), Public);
+        r1cs.add_variable("x_sq".to_string(), Public);
+        r1cs.add_variable("x_cb".to_string(), Public);
+        r1cs.add_variable("sym_1".to_string(), Public);
+        r1cs.add_variable("~out".to_string(), Public);
 
         // vars = [~one, x, x_sq, x_cb, sym_1, ~out]
         // x*x = x_sq
@@ -239,5 +257,59 @@ mod tests {
             r1cs.is_satisfied(&witness),
             "R1CS should be satisfied by this witness"
         );
+    }
+
+    #[test]
+    fn test_add_variable_public_insert_position() {
+        let mut r1cs = R1CS::<Fr>::new();
+
+        let idx_x = r1cs.add_variable("x".to_string(), Public);
+        let idx_y = r1cs.add_variable("y".to_string(), Public);
+
+        // Expected: ["~one", "x", "y"]
+        assert_eq!(r1cs.variables[idx_x], "x");
+        assert_eq!(r1cs.variables[idx_y], "y");
+        assert_eq!(idx_x, 1);
+        assert_eq!(idx_y, 2);
+        assert_eq!(r1cs.public_variables_count, 2);
+    }
+
+    #[test]
+    fn test_add_variable_private_append_position() {
+        let mut r1cs = R1CS::<Fr>::new();
+
+        r1cs.add_variable("x".to_string(), Public);  // idx 1
+        r1cs.add_variable("y".to_string(), Public);  // idx 2
+        let idx_z = r1cs.add_variable("z".to_string(), Private); // should be 3
+
+        assert_eq!(r1cs.variables[idx_z], "z");
+        assert_eq!(idx_z, 3);
+        assert_eq!(r1cs.variables.len(), 4);
+    }
+
+    #[test]
+    fn test_add_variable_intermediate_append_position() {
+        let mut r1cs = R1CS::<Fr>::new();
+
+        r1cs.add_variable("a".to_string(), Public);       // idx 1
+        let idx_tmp = r1cs.add_variable("tmp".to_string(), Intermediate); // should be 2
+
+        assert_eq!(r1cs.variables[idx_tmp], "tmp");
+        assert_eq!(idx_tmp, 2);
+    }
+
+    #[test]
+    fn test_public_variables_count_tracking() {
+        let mut r1cs = R1CS::<Fr>::new();
+        assert_eq!(r1cs.public_variables_count, 0);
+
+        r1cs.add_variable("x".to_string(), Public);
+        assert_eq!(r1cs.public_variables_count, 1);
+
+        r1cs.add_variable("y".to_string(), Private);
+        assert_eq!(r1cs.public_variables_count, 1);
+
+        r1cs.add_variable("z".to_string(), Public);
+        assert_eq!(r1cs.public_variables_count, 2);
     }
 }

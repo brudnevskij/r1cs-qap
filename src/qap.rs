@@ -7,7 +7,7 @@ use ark_poly::univariate::DensePolynomial;
 use ark_std::Zero;
 use std::ops::Add;
 
-struct QAP<F: Field> {
+pub struct QAP<F: Field> {
     target_poly: DensePolynomial<F>,
     a: Vec<DensePolynomial<F>>,
     b: Vec<DensePolynomial<F>>,
@@ -137,6 +137,8 @@ mod test {
     use super::get_vanishing_polynomial;
     use ark_ff::Field;
     use ark_poly::Polynomial;
+    use crate::r1cs::VariableType::Public;
+
     #[test]
     fn test_get_vanishing_polynomial() {
         use ark_bls12_381::Fr;
@@ -184,11 +186,11 @@ mod test {
 
         let mut r1cs = R1CS::<Fr>::new();
 
-        let x = r1cs.add_variable("x".to_string());
-        let x_sq = r1cs.add_variable("x_sq".to_string());
-        let x_cb = r1cs.add_variable("x_cb".to_string());
-        let sym_1 = r1cs.add_variable("sym_1".to_string());
-        let out = r1cs.add_variable("~out".to_string());
+        let x = r1cs.add_variable("x".to_string(), Public);
+        let x_sq = r1cs.add_variable("x_sq".to_string(), Public);
+        let x_cb = r1cs.add_variable("x_cb".to_string(), Public);
+        let sym_1 = r1cs.add_variable("sym_1".to_string(), Public);
+        let out = r1cs.add_variable("~out".to_string(), Public);
 
         // x * x = x_sq
         r1cs.add_constraint(
