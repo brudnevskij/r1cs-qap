@@ -46,7 +46,7 @@ dependencies = [
  "educe",
  "fnv",
  "hashbrown",
- "itertools",
+ "itertools 0.13.0",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -66,7 +66,7 @@ dependencies = [
  "arrayvec",
  "digest",
  "educe",
- "itertools",
+ "itertools 0.13.0",
  "num-bigint",
  "num-traits",
  "paste",
@@ -266,6 +266,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -337,10 +346,12 @@ name = "r1cs-qap"
 version = "0.1.0"
 dependencies = [
  "ark-bls12-381",
+ "ark-ec",
  "ark-ff",
  "ark-poly",
  "ark-std",
  "ark-test-curves",
+ "itertools 0.14.0",
 ]
 
 [[package]]
