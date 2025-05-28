@@ -1,25 +1,24 @@
 # 💡 R1CS-to-QAP to Pinocchio Prover — A zk-SNARK Study Project
 
-This project implements the core proving system pipeline used in zk-SNARKs, progressing from **Rank-1 Constraint Systems (R1CS)** to **Quadratic Arithmetic Programs (QAP)**, and ultimately toward the **Pinocchio** SNARK protocol.
+This project implements the core proving pipeline used in zk-SNARKs, progressing from **Rank-1 Constraint Systems (R1CS)** to **Quadratic Arithmetic Programs (QAP)** to **Pinocchio**, and ultimately toward the **Groth16** SNARK protocol..
 
 ---
 
 ## 🚀 Features
 
-- ✅ R1CS representation with variables and constraints
+- ✅ R1CS representation with variable and constraint definitions
 - ✅ Conversion from R1CS → QAP using Lagrange interpolation
 - ✅ Vanishing polynomial generation
-- ✅ Witness satisfaction checking in QAP form
-- ✅ Rust code with `arkworks`
-- 🔜 Trusted setup (CRS) for Pinocchio
-- 🔜 Polynomial commitment evaluation
-- 🔜 Proof generation and verification (Pinocchio → Groth16)
+- ✅ QAP witness satisfaction checking
+- ✅ Pinocchio-style CRS generation (Evaluation & Verification Keys)
+- ✅ zk-SNARK proof generation and verification (Pinocchio)
+- ✅ Fully tested with toy circuits (e.g., cubic)
 
 ---
 
 ## 🔬 Background
 
-This project is based on the structure described in [Vitalik Buterin’s blog post on QAPs](https://medium.com/@VitalikButerin/quadratic-arithmetic-programs-from-zero-to-hero-f6d558cea649) and extends it with practical implementation goals:
+This project is inspired by [Vitalik Buterin’s blog post on QAPs](https://medium.com/@VitalikButerin/quadratic-arithmetic-programs-from-zero-to-hero-f6d558cea649) and aims to provide a clean, modular Rust implementation using `arkworks` libraries.
 
 > _"The idea behind zk-SNARKs is to transform computation into a form where proving and verifying correctness can be done with polynomials, pairings, and commitments."_
 
@@ -28,7 +27,7 @@ This project is based on the structure described in [Vitalik Buterin’s blog po
 ## 📐 Architecture Overview
 
 ```
-  Circuit (x³ + x + 5 = 35)
+  Circuit (e.g., x³ + x + 5 = 35)
         ↓
       R1CS
         ↓
@@ -38,16 +37,49 @@ This project is based on the structure described in [Vitalik Buterin’s blog po
         ↓
      Compute H(x) = (A·B - C)/Z
         ↓
-    Commitments & Pairings → [WIP]
+ Commitments & Pairing-based Verifier (Pinocchio)
 ```
 
 ---
 
 ## 🧱 Planned Extensions
+- [ ] Transition to Groth16 (compressed CRS, single pairing check)
 
-- [ ] Pinocchio-style trusted setup
-- [ ] Commitment to QAP evaluations at `s`
-- [ ] Proof structure with G1/G2 elements
-- [ ] Groth16 optimization (compressed proofs)
-- [ ] CLI + serialization format (e.g., JSON circuit input)
-- [ ] ZK option toggle (homomorphic blinding)
+---
+
+## 📦 Dependencies
+
+- [`ark-ec`](https://docs.rs/ark-ec)
+- [`ark-poly`](https://docs.rs/ark-poly)
+- [`ark-ff`](https://docs.rs/ark-ff)
+- [`ark-bls12-381`](https://docs.rs/ark-bls12-381)
+- [`itertools`](https://docs.rs/itertools)
+
+---
+
+## 🧪 Running Tests
+
+```bash
+cargo test
+```
+
+Tests include:
+- Basic cubic constraint system
+- Proof soundness check (invalid proofs fail)
+- CRS key generation checks
+
+---
+
+## 📚 Learning Resources
+
+- [Vitalik Buterin – QAPs From Zero to Hero](https://medium.com/@VitalikButerin/quadratic-arithmetic-programs-from-zero-to-hero-f6d558cea649)
+- [The MoonMath Manual](https://github.com/LeastAuthority/moonmath-manual)
+- [zk-SNARKs in Rust by arkworks](https://arkworks.rs)
+
+---
+
+## 🛠️ Author
+
+Built as a study project by a cryptography student, aiming to fully understand zkSNARKs from the ground up.
+
+---
