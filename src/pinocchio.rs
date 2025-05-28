@@ -1,8 +1,10 @@
 use crate::qap::QAP;
+use ark_ec::pairing::PairingOutput;
 use ark_ec::{CurveGroup, pairing::Pairing};
 use ark_ff::{Field, Zero};
 use ark_poly::Polynomial;
 use itertools::{Itertools, izip};
+use std::ops::Mul;
 
 /// EvaluationKey contains all prover-side CRS elements.
 /// These are used to construct a proof for a given QAP instance.
@@ -39,7 +41,12 @@ pub struct EvaluationKey<E: Pairing> {
 
 impl<E: Pairing> EvaluationKey<E> {
     // TODO: consider using just Polynomial for QAP_polys
-    fn new(g1: E::G1, g2: E::G2, toxic_waste: &Trapdoor<E::ScalarField>, qap: &QAP<E::ScalarField>) -> Self {
+    fn new(
+        g1: E::G1,
+        g2: E::G2,
+        toxic_waste: &Trapdoor<E::ScalarField>,
+        qap: &QAP<E::ScalarField>,
+    ) -> Self {
         let mut v_s = Vec::new();
         let mut w_s = Vec::new();
         let mut w_s_g2 = Vec::new();
@@ -195,9 +202,14 @@ struct CRS<E: Pairing> {
     verification_key: VerificationKey<E>,
 }
 impl<E: Pairing> CRS<E> {
-    fn new(qap: &QAP<E::ScalarField>, toxic_waste: &Trapdoor<E::ScalarField>, g1: E::G1, g2: E::G2) -> Self {
-        let evaluation_key = EvaluationKey::<E>::new(g1,g2, &toxic_waste, &qap);
-        let verification_key = VerificationKey::<E>::new(g1,g2, &toxic_waste, &qap);
+    fn new(
+        qap: &QAP<E::ScalarField>,
+        toxic_waste: &Trapdoor<E::ScalarField>,
+        g1: E::G1,
+        g2: E::G2,
+    ) -> Self {
+        let evaluation_key = EvaluationKey::<E>::new(g1, g2, &toxic_waste, &qap);
+        let verification_key = VerificationKey::<E>::new(g1, g2, &toxic_waste, &qap);
         Self {
             evaluation_key,
             verification_key,
@@ -262,8 +274,7 @@ impl<E: Pairing> Proof<E> {
             evaluation_key.alpha_w_s.iter(),
             evaluation_key.alpha_y_s.iter(),
             evaluation_key.beta_sum_g.iter(),
-        )
-        {
+        ) {
             g_v_s += v * witness_i;
             g1_w_s += w * witness_i;
             g2_w_s += w2 * witness_i;
@@ -294,7 +305,61 @@ impl<E: Pairing> Proof<E> {
     }
 }
 
+/// Pinocchio verification function, -one considered to be first item in the public input
+fn verify<E: Pairing>(
+    proof: Proof<E>,
+    verification_key: VerificationKey<E>,
+    public_input: &[E::ScalarField],
+) -> bool {
+    let mut g_vio_s = E::G1::zero();
+    let mut g_wio_s = E::G2::zero();
+    let mut g_yio_s = E::G1::zero();
 
+    // constant terms
+    let g_v0_s = verification_key.committed_input_polynomials[0].0;
+    let g_w0_s = verification_key.committed_input_polynomials[0].1;
+    let g_y0_s = verification_key.committed_input_polynomials[0].2;
+
+    // compute v/w/y commitments for public inputs
+    for (&input, (v, w, y)) in izip!(
+        public_input.iter(),
+        verification_key.committed_input_polynomials.iter()
+    )
+    .skip(1)
+    {
+        g_vio_s += *v * input;
+        g_wio_s += *w * input;
+        g_yio_s += *y * input;
+    }
+
+    // divisibility check
+    let lhs = E::pairing(
+        g_v0_s + g_vio_s + proof.g_v_s,
+        g_w0_s + g_wio_s + proof.g2_w_s,
+    );
+    let rhs = E::pairing(verification_key.g_y_target_s, proof.g_h_s)
+        + E::pairing(g_y0_s + g_yio_s + proof.g_y_s, verification_key.g2);
+    let divisibility = lhs == rhs;
+
+    // linear combination check
+    let v_combination = E::pairing(proof.g_v_alpha_v_s, verification_key.g2)
+        == E::pairing(proof.g_v_s, verification_key.g_alpha_v);
+    let w_combination = E::pairing(proof.g_w_alpha_w_s, verification_key.g2)
+        == E::pairing(proof.g1_w_s, verification_key.g_alpha_w);
+    let y_combination = E::pairing(proof.g_y_alpha_y_s, verification_key.g2)
+        == E::pairing(proof.g_y_s, verification_key.g_alpha_y);
+    let linear_combination = v_combination && w_combination && y_combination;
+
+    // coefficients check
+    let lhs = E::pairing(proof.g_combined, verification_key.g_gamma);
+    let rhs = E::pairing(
+        proof.g_v_s + proof.g1_w_s + proof.g_y_s,
+        verification_key.g_beta_gamma,
+    );
+    let coefficients = lhs == rhs;
+
+    divisibility && linear_combination && coefficients
+}
 
 #[cfg(test)]
 mod tests {
@@ -446,7 +511,7 @@ mod tests {
         let trapdoor = dummy_trapdoor();
         let g1 = G1Projective::generator();
         let g2 = G2Projective::generator();
-        let eval_key = EvaluationKey::<Bls12_381>::new(g1,g2, &trapdoor, &qap);
+        let eval_key = EvaluationKey::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
 
         // Very basic sanity check — lengths must match
         assert!(!eval_key.v_s.is_empty());
@@ -509,7 +574,7 @@ mod tests {
         let trapdoor = dummy_trapdoor();
         let g1 = G1Projective::generator();
         let g2 = G2Projective::generator();
-        let ek = EvaluationKey::<Bls12_381>::new(g1,g2, &trapdoor, &qap);
+        let ek = EvaluationKey::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
 
         // Valid witness for the R1CS: x = 2
         let x = Fr::from(2u64);
@@ -525,5 +590,60 @@ mod tests {
         let g1_identity = G1Projective::zero();
         assert_ne!(proof.g1_w_s, g1_identity);
         assert_ne!(proof.g_combined, g1_identity);
+    }
+
+    #[test]
+    fn test_pinocchio_verification_success() {
+        let qap = cubic_constraint_system();
+        let trapdoor = dummy_trapdoor();
+        let g1 = G1Projective::generator();
+        let g2 = G2Projective::generator();
+
+        // CRS with pairing engine
+        let crs = CRS::<Bls12_381>::new(&qap, &trapdoor, g1, g2);
+
+        // Valid witness: x = 2 → x^3 + x + 5 = 15
+        let x = Fr::from(2u64);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + Fr::from(5u64);
+        let witness = vec![Fr::one(), out, x, x_sq, x_cb, sym_1];
+
+        assert!(qap.is_satisfied(&witness));
+
+        let proof = Proof::<Bls12_381>::new(&crs.evaluation_key, &witness, &qap);
+        let public_input = vec![Fr::one(), out]; // ~one, ~out
+
+        let verified = verify::<Bls12_381>(proof, crs.verification_key, &public_input);
+        assert!(verified, "Valid proof did not verify");
+    }
+
+    #[test]
+    fn test_pinocchio_verification_fail() {
+        let qap = cubic_constraint_system();
+        let trapdoor = dummy_trapdoor();
+        let g1 = G1Projective::generator();
+        let g2 = G2Projective::generator();
+
+        // CRS with pairing engine
+        let crs = CRS::<Bls12_381>::new(&qap, &trapdoor, g1, g2);
+
+        // Valid witness: x = 3 → x^3 + x + 5 = 15
+        let x = Fr::from(3u64);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + Fr::from(5u64);
+
+        // supplying x_sq instead of the x
+        let witness = vec![Fr::one(), out, x_sq, x_sq, x_cb, sym_1];
+
+        let proof = Proof::<Bls12_381>::new(&crs.evaluation_key, &witness, &qap);
+        let public_input = vec![Fr::one(), out]; // ~one, ~out
+
+        let verified = verify::<Bls12_381>(proof, crs.verification_key, &public_input);
+
+        assert!(!verified, "Invalid proof verified");
     }
 }
