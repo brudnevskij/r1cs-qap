@@ -25,7 +25,7 @@ impl<F: Field> QAP<F> {
         }
     }
 
-    pub fn is_satisfied(&self, witness: &[F]) -> bool {
+    pub fn compute_p(&self, witness: &[F]) -> DensePolynomial<F> {
         let mut a_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
         let mut b_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
         let mut c_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
@@ -43,14 +43,28 @@ impl<F: Field> QAP<F> {
                 + c.naive_mul(&DensePolynomial::from_coefficients_vec(vec![witness[i]]))
         }
 
-        let poly = a_polynomial.naive_mul(&b_polynomial) - c_polynomial;
+        a_polynomial.naive_mul(&b_polynomial) - c_polynomial
+    }
 
-        let d = DenseOrSparsePolynomial::from(poly);
+    pub fn compute_h(&self,witness: &[F]) -> DensePolynomial<F> {
+        let p = self.compute_p(witness);
+        let d = DenseOrSparsePolynomial::from(p);
+        let (h, _) = d
+            .divide_with_q_and_r(&DenseOrSparsePolynomial::from(&self.target_poly))
+            .unwrap();
+        h
+    }
+
+    pub fn is_satisfied(&self, witness: &[F]) -> bool {
+        let p = self.compute_p(witness);
+        let d = DenseOrSparsePolynomial::from(p);
         let (_, remainder) = d
             .divide_with_q_and_r(&DenseOrSparsePolynomial::from(&self.target_poly))
             .unwrap();
         remainder.is_zero()
     }
+
+
 }
 
 pub fn get_vanishing_polynomial<F: Field>(roots: Vec<F>) -> DensePolynomial<F> {
