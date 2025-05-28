@@ -2,8 +2,7 @@ use crate::qap::QAP;
 use ark_ec::{CurveGroup, pairing::Pairing};
 use ark_ff::Field;
 use ark_poly::Polynomial;
-use ark_poly::univariate::DensePolynomial;
-use itertools::izip;
+use itertools::{Itertools, izip};
 
 /// EvaluationKey contains all prover-side CRS elements.
 /// These are used to construct a proof for a given QAP instance.
@@ -37,11 +36,7 @@ pub struct EvaluationKey<G: CurveGroup> {
 
 impl<G: CurveGroup> EvaluationKey<G> {
     // TODO: consider using just Polynomial for QAP_polys
-    fn new<F: Field>(
-        g: G,
-        toxic_waste: Trapdoor<G::ScalarField>,
-        qap: QAP<G::ScalarField>,
-    ) -> Self {
+    fn new(g: G, toxic_waste: &Trapdoor<G::ScalarField>, qap: &QAP<G::ScalarField>) -> Self {
         let mut v_s = Vec::<G>::new();
         let mut w_s = Vec::<G>::new();
         let mut y_s = Vec::<G>::new();
@@ -111,14 +106,94 @@ pub struct Trapdoor<F> {
     pub gamma: F,
 }
 
+/// VerificationKey contains all verifier-side CRS elements.
+/// These are used to verify a proof generated from a QAP instance.
+pub struct VerificationKey<G: CurveGroup> {
+    /// Generator of the group: g ∈ G1
+    pub g: G,
+
+    /// Commitment to α_v: g^{α_v}
+    pub g_alpha_v: G,
+
+    /// Commitment to α_w: g^{α_w}
+    pub g_alpha_w: G,
+
+    /// Commitment to α_y: g^{α_y}
+    pub g_alpha_y: G,
+
+    /// Commitment to γ: g^{γ}
+    pub g_gamma: G,
+
+    /// Commitment to β * γ: g^{β * γ}
+    pub g_beta_gamma: G,
+
+    /// Commitment to the target polynomial t(s): g^{y(s)} for public inputs
+    pub g_y_target_s: G,
+
+    /// Commitments to the evaluated polynomials for each public input variable:
+    /// Each tuple is:
+    /// (
+    ///   g^{r_v · v_i(s)},
+    ///   g^{r_w · w_i(s)},
+    ///   g^{r_y · y_i(s)}, where r_y = r_v · r_w
+    /// )
+    pub committed_input_polynomials: Vec<(G, G, G)>,
+}
+
+impl<G: CurveGroup> VerificationKey<G> {
+    pub fn new(
+        g: G,
+        toxic_waste: &Trapdoor<G::ScalarField>,
+        qap: &QAP<G::ScalarField>,
+    ) -> VerificationKey<G> {
+        let g_v = g * toxic_waste.rv;
+        let g_w = g * toxic_waste.rw;
+        let r_y = toxic_waste.rv * toxic_waste.rw;
+        let g_y = g * r_y;
+
+        let g_alpha_v = g * toxic_waste.alpha_v;
+        let g_alpha_w = g * toxic_waste.alpha_w;
+        let g_alpha_y = g * toxic_waste.alpha_y;
+        let g_gamma = g * toxic_waste.gamma;
+        let g_beta_gamma = g * toxic_waste.beta * toxic_waste.gamma;
+        let g_y_target_s = g_y * qap.target_poly.evaluate(&toxic_waste.s);
+        let mut committed_input_polynomials = izip!(
+            qap.a.iter().take(qap.public_variables_count + 1),
+            qap.b.iter().take(qap.public_variables_count + 1),
+            qap.c.iter().take(qap.public_variables_count + 1)
+        )
+        .map(|(v_poly, w_poly, y_poly)| {
+            let v = g_v * v_poly.evaluate(&toxic_waste.s);
+            let w = g_w * w_poly.evaluate(&toxic_waste.s);
+            let y = g_y * y_poly.evaluate(&toxic_waste.s);
+            (v, w, y)
+        })
+        .collect();
+
+        Self {
+            g,
+            g_alpha_v,
+            g_alpha_w,
+            g_alpha_y,
+            g_gamma,
+            g_beta_gamma,
+            g_y_target_s,
+            committed_input_polynomials,
+        }
+    }
+}
+
 struct CRS<G: CurveGroup> {
     evaluation_key: EvaluationKey<G>,
+    verification_key: VerificationKey<G>,
 }
 impl<G: CurveGroup> CRS<G> {
     fn new(qap: QAP<G::ScalarField>, toxic_waste: Trapdoor<G::ScalarField>, g: G) -> Self {
-        let evaluation_key = EvaluationKey::<G>::new::<G::ScalarField>(g, toxic_waste, qap);
-        Self{
-            evaluation_key ,
+        let evaluation_key = EvaluationKey::<G>::new(g, &toxic_waste, &qap);
+        let verification_key = VerificationKey::<G>::new(g, &toxic_waste, &qap);
+        Self {
+            evaluation_key,
+            verification_key,
         }
     }
 }
@@ -126,53 +201,170 @@ impl<G: CurveGroup> CRS<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bls12_381::{Bls12_381, G1Projective, Fr};
+    use crate::r1cs::{
+        R1CS,
+        VariableType::{Intermediate, Private, Public},
+    };
+    use ark_bls12_381::{Fr, G1Projective};
     use ark_ec::PrimeGroup;
-    use ark_ff::UniformRand;
-    use ark_poly::DenseUVPolynomial;
-    use ark_std::test_rng;
+    use ark_ff::{One, UniformRand, Zero};
+
+    fn cubic_constraint_system() -> QAP<Fr> {
+        // Create constraints for x**3 + x + 5 = 35
+        let mut r1cs = R1CS::<Fr>::new();
+        r1cs.add_variable("x".to_string(), Private);
+        r1cs.add_variable("x_sq".to_string(), Intermediate);
+        r1cs.add_variable("x_cb".to_string(), Intermediate);
+        r1cs.add_variable("sym_1".to_string(), Intermediate);
+        r1cs.add_variable("~out".to_string(), Public);
+
+        // vars = [~one, x, x_sq, x_cb, sym_1, ~out]
+        // x*x = x_sq
+        let a = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        r1cs.add_constraint(a, b, c);
+
+        // x_sq * x = x_cb
+        let a = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        r1cs.add_constraint(a, b, c);
+
+        // x_cb + x = sym_1
+        let a = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+        ];
+        r1cs.add_constraint(a, b, c);
+
+        // sym_1 + 5 = out
+        let a = vec![
+            Fr::from(5),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+        ];
+        r1cs.add_constraint(a, b, c);
+        QAP::from(&r1cs)
+    }
+
+    fn dummy_trapdoor() -> Trapdoor<Fr> {
+        Trapdoor {
+            rv: Fr::from(2u64),
+            rw: Fr::from(3u64),
+            s: Fr::from(5u64),
+            alpha_v: Fr::from(7u64),
+            alpha_w: Fr::from(11u64),
+            alpha_y: Fr::from(13u64),
+            beta: Fr::from(17u64),
+            gamma: Fr::from(19u64),
+        }
+    }
 
     #[test]
     fn test_eval_key_generation() {
-        let mut rng = test_rng();
-
-        // Fake 3-variable QAP for testing
-        let a = vec![
-            DensePolynomial::from_coefficients_vec(vec![Fr::from(1)]), // 1
-            DensePolynomial::from_coefficients_vec(vec![Fr::from(2)]), // 2
-            DensePolynomial::from_coefficients_vec(vec![Fr::from(3)]), // 3
-        ];
-        let b = a.clone();
-        let c = a.clone();
-
-        let target_poly = DensePolynomial::from_coefficients_vec(vec![Fr::from(1)]);
-
-        let qap = QAP {
-            a,
-            b,
-            c,
-            target_poly,
-            public_variables_count: 1, // skip 0 and 1
-        };
-
-        let toxic = Trapdoor {
-            rv: Fr::rand(&mut rng),
-            rw: Fr::rand(&mut rng),
-            s: Fr::rand(&mut rng),
-            alpha_v: Fr::rand(&mut rng),
-            alpha_w: Fr::rand(&mut rng),
-            alpha_y: Fr::rand(&mut rng),
-            beta: Fr::rand(&mut rng),
-            gamma: Fr::rand(&mut rng),
-        };
-
+        let qap = cubic_constraint_system();
+        let trapdoor = dummy_trapdoor();
         let g = G1Projective::generator();
-
-        let eval_key = EvaluationKey::<G1Projective>::new::<Fr>(g, toxic, qap);
+        let eval_key = EvaluationKey::<G1Projective>::new(g, &trapdoor, &qap);
 
         // Very basic sanity check — lengths must match
         assert!(!eval_key.v_s.is_empty());
         assert_eq!(eval_key.v_s.len(), eval_key.alpha_v_s.len());
-        assert_eq!(eval_key.powers_of_s.len(), 1); // target poly is degree 1
+        assert_eq!(eval_key.powers_of_s.len(), 5); // target poly is degree 4
+    }
+
+    #[test]
+    fn test_verification_key_generation() {
+        let qap = cubic_constraint_system();
+        let trapdoor = dummy_trapdoor();
+        let g = G1Projective::generator();
+
+        let vk = VerificationKey::new(g, &trapdoor, &qap);
+
+        assert_eq!(vk.committed_input_polynomials.len(), 2); // [~one, ~out]
+        assert!(!vk.g.is_zero());
+        assert!(!vk.g_y_target_s.is_zero());
     }
 }
