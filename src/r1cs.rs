@@ -239,7 +239,6 @@ mod tests {
     #[test]
     fn test_cubic_constraint_system_satisfied() {
         use ark_bls12_381::Fr;
-        use ark_ff::Field;
 
         let r1cs = cubic_constraint_system();
 

@@ -157,7 +157,7 @@ impl<G: CurveGroup> VerificationKey<G> {
         let g_gamma = g * toxic_waste.gamma;
         let g_beta_gamma = g * toxic_waste.beta * toxic_waste.gamma;
         let g_y_target_s = g_y * qap.target_poly.evaluate(&toxic_waste.s);
-        let mut committed_input_polynomials = izip!(
+        let committed_input_polynomials = izip!(
             qap.a.iter().take(qap.public_variables_count + 1),
             qap.b.iter().take(qap.public_variables_count + 1),
             qap.c.iter().take(qap.public_variables_count + 1)
@@ -188,12 +188,93 @@ struct CRS<G: CurveGroup> {
     verification_key: VerificationKey<G>,
 }
 impl<G: CurveGroup> CRS<G> {
-    fn new(qap: QAP<G::ScalarField>, toxic_waste: Trapdoor<G::ScalarField>, g: G) -> Self {
+    fn new(qap: &QAP<G::ScalarField>, toxic_waste: &Trapdoor<G::ScalarField>, g: G) -> Self {
         let evaluation_key = EvaluationKey::<G>::new(g, &toxic_waste, &qap);
         let verification_key = VerificationKey::<G>::new(g, &toxic_waste, &qap);
         Self {
             evaluation_key,
             verification_key,
+        }
+    }
+}
+
+/// `Proof` contains all prover-generated values to be sent to the verifier
+/// in a Pinocchio-style zk-SNARK protocol.
+pub struct Proof<G: CurveGroup> {
+    /// Commitment to v(s): g^{v(s)}
+    pub g_v_s: G,
+
+    /// Commitment to w(s): g^{w(s)}
+    pub g_w_s: G,
+
+    /// Commitment to y(s): g^{y(s)} = v(s) * w(s)
+    pub g_y_s: G,
+
+    /// Commitment to the quotient polynomial h(s): g^{h(s)}
+    /// where h(x) = (v(x)w(x) - y(x)) / t(x)
+    pub g_h_s: G,
+
+    /// Commitment to α_v · v(s): g^{α_v · v(s)}
+    pub g_v_alpha_v_s: G,
+
+    /// Commitment to α_w · w(s): g^{α_w · w(s)}
+    pub g_w_alpha_w_s: G,
+
+    /// Commitment to α_y · y(s): g^{α_y · y(s)}
+    pub g_y_alpha_y_s: G,
+
+    /// Commitment to β(v(s) + w(s) + y(s)) — combined using CRS values
+    pub g_combined: G,
+}
+
+impl<G: CurveGroup> Proof<G> {
+    pub fn new(
+        evaluation_key: &EvaluationKey<G>,
+        witness: &[G::ScalarField],
+        qap: &QAP<G::ScalarField>,
+    ) -> Self {
+        let mut g_v_s = G::zero();
+        let mut g_w_s = G::zero();
+        let mut g_y_s = G::zero();
+        let mut g_v_alpha_v_s = G::zero();
+        let mut g_w_alpha_w_s = G::zero();
+        let mut g_y_alpha_y_s = G::zero();
+        let mut g_combined = G::zero();
+
+        for (witness_i, &v, &w, &y, &alpha_v, &alpha_w, &alpha_y, &beta_sum) in izip!(
+            witness.iter().skip(qap.public_variables_count + 1),
+            evaluation_key.v_s.iter(),
+            evaluation_key.w_s.iter(),
+            evaluation_key.y_s.iter(),
+            evaluation_key.alpha_v_s.iter(),
+            evaluation_key.alpha_w_s.iter(),
+            evaluation_key.alpha_y_s.iter(),
+            evaluation_key.beta_sum_g.iter(),
+        ) {
+            g_v_s += v * witness_i;
+            g_w_s += w * witness_i;
+            g_y_s += y * witness_i;
+            g_v_alpha_v_s += alpha_v * witness_i;
+            g_w_alpha_w_s += alpha_w * witness_i;
+            g_y_alpha_y_s += alpha_y * witness_i;
+            g_combined += beta_sum * witness_i;
+        }
+
+        let h = qap.compute_h(witness);
+        let mut g_h_s = G::zero();
+        for (c, &g_s) in izip!(h.coeffs.iter(), evaluation_key.powers_of_s.iter()) {
+            g_h_s += g_s * c;
+        }
+
+        Self {
+            g_v_s,
+            g_w_s,
+            g_y_s,
+            g_h_s,
+            g_v_alpha_v_s,
+            g_w_alpha_w_s,
+            g_y_alpha_y_s,
+            g_combined,
         }
     }
 }
@@ -218,20 +299,20 @@ mod tests {
         r1cs.add_variable("sym_1".to_string(), Intermediate);
         r1cs.add_variable("~out".to_string(), Public);
 
-        // vars = [~one, x, x_sq, x_cb, sym_1, ~out]
+        // vars = [~one, ~out, x, x_sq, x_cb, sym_1]
         // x*x = x_sq
         let a = vec![
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
             Fr::zero(),
             Fr::zero(),
         ];
         let b = vec![
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
             Fr::zero(),
             Fr::zero(),
@@ -239,8 +320,8 @@ mod tests {
         let c = vec![
             Fr::zero(),
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
             Fr::zero(),
         ];
@@ -250,15 +331,15 @@ mod tests {
         let a = vec![
             Fr::zero(),
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
             Fr::zero(),
         ];
         let b = vec![
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
             Fr::zero(),
             Fr::zero(),
@@ -267,8 +348,8 @@ mod tests {
             Fr::zero(),
             Fr::zero(),
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
         ];
         r1cs.add_constraint(a, b, c);
@@ -276,10 +357,10 @@ mod tests {
         // x_cb + x = sym_1
         let a = vec![
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
             Fr::one(),
             Fr::zero(),
+            Fr::one(),
             Fr::zero(),
         ];
         let b = vec![
@@ -295,8 +376,8 @@ mod tests {
             Fr::zero(),
             Fr::zero(),
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
         ];
         r1cs.add_constraint(a, b, c);
 
@@ -306,8 +387,8 @@ mod tests {
             Fr::zero(),
             Fr::zero(),
             Fr::zero(),
-            Fr::one(),
             Fr::zero(),
+            Fr::one(),
         ];
         let b = vec![
             Fr::one(),
@@ -319,11 +400,11 @@ mod tests {
         ];
         let c = vec![
             Fr::zero(),
-            Fr::zero(),
-            Fr::zero(),
-            Fr::zero(),
-            Fr::zero(),
             Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
         ];
         r1cs.add_constraint(a, b, c);
         QAP::from(&r1cs)
@@ -352,6 +433,10 @@ mod tests {
         // Very basic sanity check — lengths must match
         assert!(!eval_key.v_s.is_empty());
         assert_eq!(eval_key.v_s.len(), eval_key.alpha_v_s.len());
+        assert!(!eval_key.w_s.is_empty());
+        assert_eq!(eval_key.w_s.len(), eval_key.alpha_w_s.len());
+        assert!(!eval_key.y_s.is_empty());
+        assert_eq!(eval_key.y_s.len(), eval_key.alpha_y_s.len());
         assert_eq!(eval_key.powers_of_s.len(), 5); // target poly is degree 4
     }
 
@@ -366,5 +451,57 @@ mod tests {
         assert_eq!(vk.committed_input_polynomials.len(), 2); // [~one, ~out]
         assert!(!vk.g.is_zero());
         assert!(!vk.g_y_target_s.is_zero());
+    }
+
+    #[test]
+    fn test_proof_generation_outputs_nonzero_commitments() {
+        let qap = cubic_constraint_system();
+        let trapdoor = dummy_trapdoor();
+        let g = G1Projective::generator();
+        let crs = CRS::<G1Projective>::new(&qap, &trapdoor, g);
+
+        // x = 2 → x^3 + x + 5 = 8 + 2 + 5 = 15
+        // So ~out = 15
+        let x = Fr::from(2u64);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + Fr::from(5u64);
+        let witness = vec![Fr::one(), out, x, x_sq, x_cb, sym_1];
+        assert!(qap.is_satisfied(&witness));
+
+        let proof = Proof::<G1Projective>::new(&crs.evaluation_key, &witness, &qap);
+
+        assert!(!proof.g_v_s.is_zero());
+        assert!(!proof.g_w_s.is_zero());
+        assert!(!proof.g_y_s.is_zero());
+        assert!(!proof.g_h_s.is_zero());
+        assert!(!proof.g_v_alpha_v_s.is_zero());
+        assert!(!proof.g_w_alpha_w_s.is_zero());
+        assert!(!proof.g_y_alpha_y_s.is_zero());
+        assert!(!proof.g_combined.is_zero());
+    }
+
+    #[test]
+    fn test_proof_generation_consistency_of_sizes() {
+        let qap = cubic_constraint_system();
+        let trapdoor = dummy_trapdoor();
+        let g = G1Projective::generator();
+        let ek = EvaluationKey::<G1Projective>::new(g, &trapdoor, &qap);
+
+        // Valid witness for the R1CS: x = 2
+        let x = Fr::from(2u64);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + Fr::from(5u64);
+        let witness = vec![Fr::one(), out, x, x_sq, x_cb, sym_1, out];
+
+        let proof = Proof::<G1Projective>::new(&ek, &witness, &qap);
+
+        // This test isn't about values, but rather structural integrity
+        let g1_identity = G1Projective::zero();
+        assert_ne!(proof.g_v_s, g1_identity);
+        assert_ne!(proof.g_combined, g1_identity);
     }
 }

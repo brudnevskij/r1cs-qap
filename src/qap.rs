@@ -46,7 +46,7 @@ impl<F: Field> QAP<F> {
         a_polynomial.naive_mul(&b_polynomial) - c_polynomial
     }
 
-    pub fn compute_h(&self,witness: &[F]) -> DensePolynomial<F> {
+    pub fn compute_h(&self, witness: &[F]) -> DensePolynomial<F> {
         let p = self.compute_p(witness);
         let d = DenseOrSparsePolynomial::from(p);
         let (h, _) = d
@@ -63,8 +63,6 @@ impl<F: Field> QAP<F> {
             .unwrap();
         remainder.is_zero()
     }
-
-
 }
 
 pub fn get_vanishing_polynomial<F: Field>(roots: Vec<F>) -> DensePolynomial<F> {
