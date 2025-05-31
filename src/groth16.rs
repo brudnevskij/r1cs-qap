@@ -298,65 +298,69 @@ mod tests {
     }
 
     #[test]
-    fn test_proving_key_generation() {
+    fn test_sigma1_generation() {
         let mut rng = thread_rng();
+        let g1 = <Bls12_381 as Pairing>::G1::generator();
 
-        let g = <Bls12_381 as Pairing>::G1::generator();
-
-        // Random trapdoor values
         let trapdoor = TrapDoor {
-            alpha: F::rand(&mut rng),
-            beta: F::rand(&mut rng),
-            gamma: F::rand(&mut rng),
-            delta: F::rand(&mut rng),
-            tau: F::rand(&mut rng),
+            alpha: Fr::rand(&mut rng),
+            beta: Fr::rand(&mut rng),
+            gamma: Fr::rand(&mut rng),
+            delta: Fr::rand(&mut rng),
+            tau: Fr::rand(&mut rng),
         };
+
         let qap = cubic_constraint_system();
-        let pk = Sigma1::<Bls12_381>::new(g, &trapdoor, &qap);
+        let sigma1 = Sigma1::<Bls12_381>::new(g1, &trapdoor, &qap);
 
-        // Expect tau_powers = degree(target_poly) = 4
-        assert_eq!(pk.tau_powers.len(), 4, "Incorrect number of tau powers");
-
-        // Expect h_query = degree(target_poly) - 1 = 3
-        assert_eq!(pk.h_query.len(), 3, "Incorrect number of h_query elements");
-
-        // Expect committed_witnesses = #vars - public - 1 (for 1-based indexing)
         assert_eq!(
-            pk.committed_witnesses.len(),
-            4,
-            "Incorrect witness commitments"
+            sigma1.tau_powers.len(),
+            qap.target_poly.degree(),
+            "tau powers length should equal target poly degree"
+        );
+
+        assert_eq!(
+            sigma1.h_query.len(),
+            qap.target_poly.degree() - 1,
+            "h_query length should equal target poly degree - 1"
+        );
+
+        assert_eq!(
+            sigma1.committed_statements.len(),
+            qap.public_variables_count + 1,
+            "committed_statements should include ~1 and all public vars"
+        );
+
+        let expected_witnesses = qap.a.len() - (qap.public_variables_count + 1);
+        assert_eq!(
+            sigma1.committed_witnesses.len(),
+            expected_witnesses,
+            "committed_witnesses length incorrect"
         );
     }
+
 
     #[test]
-    fn test_verification_key_generation() {
+    fn test_sigma2_generation() {
         let mut rng = thread_rng();
-
-        // Generator elements
-        let g1 = <Bls12_381 as Pairing>::G1::generator();
         let g2 = <Bls12_381 as Pairing>::G2::generator();
 
-        // Random trapdoor for trusted setup
         let trapdoor = TrapDoor {
-            alpha: F::rand(&mut rng),
-            beta: F::rand(&mut rng),
-            gamma: F::rand(&mut rng),
-            delta: F::rand(&mut rng),
-            tau: F::rand(&mut rng),
+            alpha: Fr::rand(&mut rng),
+            beta: Fr::rand(&mut rng),
+            gamma: Fr::rand(&mut rng),
+            delta: Fr::rand(&mut rng),
+            tau: Fr::rand(&mut rng),
         };
 
-        // Build cubic constraint system → QAP
         let qap = cubic_constraint_system();
+        let sigma2 = Sigma2::<Bls12_381>::new(g2, &trapdoor, &qap);
 
-        // Construct verification key
-        let vk = Sigma2::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
-
-        // Check that the number of gamma_abc elements matches number of public vars + 1 (for ~1)
-        let expected_gamma_abc_len = qap.public_variables_count + 1;
         assert_eq!(
-            vk.gamma_abc_g1.len(),
-            expected_gamma_abc_len,
-            "gamma_abc_g1 should have one entry per public variable + 1"
+            sigma2.tau_powers.len(),
+            qap.target_poly.degree(),
+            "sigma2 tau powers should match target poly degree"
         );
     }
+
 }
