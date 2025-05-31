@@ -41,6 +41,40 @@ with a focus on clarity, correctness, and hands-on understanding of each transfo
   → Groth16: Optimized zk-SNARK with 1 pairing + compressed CRS
 ```
 
+## 🧪 Running the Demo
+
+This project includes a complete end-to-end example in `main.rs` for both the **Pinocchio** and **Groth16** zk-SNARK protocols. It builds a toy arithmetic circuit:
+
+> x² - x + 132 = out
+
+Then it:
+
+1. Translates the circuit to R1CS
+2. Converts R1CS → QAP
+3. Generates a trusted setup (Pinocchio & Groth16)
+4. Constructs a witness
+5. Produces a proof
+6. Verifies it
+
+---
+
+### 🛠 Running
+
+```bash
+cargo run
+```
+
+You should see output like:
+```bash
+✅ QAP is satisfied by witness
+📦 Pinocchio setup...
+🔏 Generating Pinocchio proof...
+📄 Pinocchio proof: ACCEPTED ✅
+📦 Groth16 setup...
+🔏 Generating Groth16 proof...
+📄 Groth16 proof: ACCEPTED ✅
+```
+
 ---
 
 ## 📦 Dependencies
