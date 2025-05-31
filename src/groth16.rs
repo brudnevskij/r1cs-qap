@@ -17,6 +17,20 @@ struct CRS<E: Pairing> {
     verification_key: VerificationKey<E>,
 }
 
+impl<E: Pairing> CRS<E> {
+    pub fn new(
+        g1: E::G1,
+        g2: E::G2,
+        trap_door: &TrapDoor<E::ScalarField>,
+        qap: &QAP<E::ScalarField>,
+    ) -> Self {
+        Self {
+            proving_key: ProvingKey::new(g1, trap_door, qap),
+            verification_key: VerificationKey::new(g1, g2, trap_door, qap),
+        }
+    }
+}
+
 /// Proving key for the Groth16 zk-SNARK protocol.
 struct ProvingKey<E: Pairing> {
     /// Commitment to the trapdoor element α · G1
@@ -43,8 +57,8 @@ struct ProvingKey<E: Pairing> {
 impl<E: Pairing> ProvingKey<E> {
     pub fn new(
         g: E::G1,
-        trap_door: TrapDoor<E::ScalarField>,
-        qap: QAP<E::ScalarField>,
+        trap_door: &TrapDoor<E::ScalarField>,
+        qap: &QAP<E::ScalarField>,
     ) -> ProvingKey<E> {
         let TrapDoor {
             alpha,
@@ -66,10 +80,10 @@ impl<E: Pairing> ProvingKey<E> {
         let committed_witnesses: Vec<_> = izip!(qap.a.iter(), qap.b.iter(), qap.c.iter())
             .skip(qap.public_variables_count + 1)
             .map(|(a, b, c)| {
-                let a_tau = beta * a.evaluate(&tau);
-                let b_tau = alpha * b.evaluate(&tau);
+                let a_tau = *beta * a.evaluate(&tau);
+                let b_tau = *alpha * b.evaluate(&tau);
                 let c_tau = c.evaluate(&tau);
-                let coeff = (a_tau + b_tau + c_tau) / delta;
+                let coeff = (a_tau + b_tau + c_tau) / *delta;
                 (g * coeff).into()
             })
             .collect();
@@ -293,7 +307,7 @@ mod tests {
             tau: F::rand(&mut rng),
         };
         let qap = cubic_constraint_system();
-        let pk = ProvingKey::<Bls12_381>::new(g, trapdoor, qap);
+        let pk = ProvingKey::<Bls12_381>::new(g, &trapdoor, &qap);
 
         // Expect tau_powers = degree(target_poly) = 4
         assert_eq!(pk.tau_powers.len(), 4, "Incorrect number of tau powers");
@@ -340,5 +354,4 @@ mod tests {
             "gamma_abc_g1 should have one entry per public variable + 1"
         );
     }
-
 }
