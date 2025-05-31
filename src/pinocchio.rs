@@ -1,5 +1,4 @@
 use crate::qap::QAP;
-use ark_ec::pairing::PairingOutput;
 use ark_ec::{CurveGroup, pairing::Pairing};
 use ark_ff::{Field, Zero};
 use ark_poly::Polynomial;
@@ -62,6 +61,8 @@ impl<E: Pairing> EvaluationKey<E> {
         let g_w = g1 * toxic_waste.rw;
         let g_y = g1 * ry;
 
+        // Commit to non-public variable polynomials evaluated at s with randomizers (rv, rw, ry)
+        // These are the "intermediate wires" of the arithmetic circuit.
         for (i, (v_poly, w_poly, y_poly)) in
             izip!(qap.a.iter(), qap.b.iter(), qap.c.iter()).enumerate()
         {
@@ -70,6 +71,8 @@ impl<E: Pairing> EvaluationKey<E> {
                 continue;
             }
 
+            // Evaluate v_i(s), w_i(s), y_i(s) and scale them with group elements and toxic waste
+            // Apply alpha and beta blinding as required by the Pinocchio protocol.
             let v_at_s_eval = v_poly.evaluate(&toxic_waste.s);
             v_s.push(g_v * v_at_s_eval);
             alpha_v_s.push(g_v * v_at_s_eval * toxic_waste.alpha_v);
@@ -89,6 +92,7 @@ impl<E: Pairing> EvaluationKey<E> {
             beta_sum_g.push(beta);
         }
 
+        // Precompute g^{s^i} for i ∈ [0, deg(t(x))] — used in quotient polynomial commitment.
         for i in 0..=qap.target_poly.degree() {
             powers_of_s.push(g2 * &toxic_waste.s.pow([i as u64]));
         }
@@ -107,7 +111,8 @@ impl<E: Pairing> EvaluationKey<E> {
     }
 }
 
-// TODO: consider scalar field or smth
+/// Toxic waste used in trusted setup. These values are secret during setup
+/// and must be securely destroyed after CRS generation.
 pub struct Trapdoor<F> {
     pub rv: F,
     pub rw: F,
@@ -305,7 +310,11 @@ impl<E: Pairing> Proof<E> {
     }
 }
 
-/// Pinocchio verification function, -one considered to be first item in the public input
+/// Verifies a Pinocchio zk-SNARK proof using the verification key and public input.
+/// Performs:
+/// 1. QAP divisibility check
+/// 2. Linear combination (alpha) checks
+/// 3. Coefficient pairing check
 fn verify<E: Pairing>(
     proof: Proof<E>,
     verification_key: VerificationKey<E>,
