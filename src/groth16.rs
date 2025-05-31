@@ -266,7 +266,7 @@ mod tests {
     use crate::r1cs::R1CS;
     use crate::r1cs::VariableType::{Intermediate, Private, Public};
     use ark_bls12_381::{Bls12_381, Fr as F, Fr};
-    use ark_ec::PrimeGroup;
+    use ark_ec::{AffineRepr, PrimeGroup};
     use ark_ff::{One, Zero};
     use ark_std::UniformRand;
     use rand::thread_rng;
@@ -454,5 +454,55 @@ mod tests {
             qap.target_poly.degree(),
             "sigma2 tau powers should match target poly degree"
         );
+    }
+
+    #[test]
+    fn test_groth16_proof_generation() {
+        use ark_bls12_381::{Bls12_381, Fr as F};
+        use ark_ec::{pairing::Pairing, CurveGroup};
+        use ark_std::UniformRand;
+        use rand::thread_rng;
+
+        // 1. Generate a QAP from your example constraint system
+        let qap = cubic_constraint_system(); // x^3 + x + 5 = 35
+
+        // 2. Build the assignment vector
+        // assignment = [1, 35, x, x^2, x^3, x^3 + x]
+        let x = F::from(3u32);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + F::from(5);
+        let assignment = vec![F::one(), out, x, x_sq, x_cb, sym_1];
+
+        // 3. Create trapdoor (toxic waste)
+        let mut rng = thread_rng();
+        let trapdoor = TrapDoor {
+            alpha: F::rand(&mut rng),
+            beta: F::rand(&mut rng),
+            gamma: F::rand(&mut rng),
+            delta: F::rand(&mut rng),
+            tau: F::rand(&mut rng),
+        };
+
+        // 4. Generate CRS
+        let g1 = <Bls12_381 as Pairing>::G1::generator();
+        let g2 = <Bls12_381 as Pairing>::G2::generator();
+        let crs = CRS::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
+
+        // 5. Generate random r, s for proof
+        let r = F::rand(&mut rng);
+        let s = F::rand(&mut rng);
+
+        // 6. Generate the proof
+        let proof = Proof::<Bls12_381>::new(r, s, &crs, &qap, &assignment);
+
+        // 7. Assertions
+        assert!(!proof.a.is_zero(), "A is zero");
+        assert!(!proof.b.is_zero(), "B is zero");
+        assert!(!proof.c.is_zero(), "C is zero");
+
+        // NOTE: You could add a pairing check here later once a verifier is implemented.
+        println!("Proof successfully generated.");
     }
 }
