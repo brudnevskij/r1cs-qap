@@ -95,30 +95,68 @@ impl<E: Pairing> ProvingKey<E> {
 /// Verification key for the Groth16 zk-SNARK protocol.
 struct VerificationKey<E: Pairing> {
     /// Commitment to the trapdoor element α · G1
-    alpha: E::G2Affine,
+    alpha_g1: E::G1Affine,
 
     /// Commitment to the trapdoor element β · G1
-    beta: E::G2Affine,
+    beta_g2: E::G2Affine,
 
     /// Commitment to the trapdoor element δ · G1
-    delta: E::G2Affine,
+    delta_g2: E::G2Affine,
+
+    /// Commitment to the trapdoor element γ · G2
+    gamma_g2: E::G2Affine,
 
     /// Encoded public input polynomials:
     /// (β·A_i(τ) + α·B_i(τ) + C_i(τ)) / γ · G1
-    committed_statements: Vec<E::G1Affine>,
+    gamma_abc_g1: Vec<E::G1Affine>,
 }
 
+impl<E: Pairing> VerificationKey<E> {
+    pub fn new(
+        g1: E::G1,
+        g2: E::G2,
+        trap_door: TrapDoor<E::ScalarField>,
+        qap: QAP<E::ScalarField>,
+    ) -> VerificationKey<E> {
+        let TrapDoor {
+            alpha,
+            beta,
+            gamma,
+            delta,
+            tau,
+        } = trap_door;
+
+        let gamma_abc_g1 = izip!(qap.a.iter(), qap.b.iter(), qap.c.iter())
+            .take(qap.public_variables_count + 1)
+            .map(|(a, b, c)| {
+                let a_tau = beta * a.evaluate(&tau);
+                let b_tau = alpha * b.evaluate(&tau);
+                let c_tau = c.evaluate(&tau);
+                let coeff = (a_tau + b_tau + c_tau) / gamma;
+                (g1 * coeff).into()
+            })
+            .collect();
+
+        Self {
+            alpha_g1: (g1 * alpha).into(),
+            beta_g2: (g2 * beta).into(),
+            delta_g2: (g2 * delta).into(),
+            gamma_g2: (g2 * gamma).into(),
+            gamma_abc_g1,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::r1cs::R1CS;
+    use crate::r1cs::VariableType::{Intermediate, Private, Public};
     use ark_bls12_381::{Bls12_381, Fr as F, Fr};
-    use ark_ec::{PrimeGroup};
+    use ark_ec::PrimeGroup;
     use ark_ff::{One, Zero};
     use ark_std::UniformRand;
     use rand::thread_rng;
-    use crate::r1cs::R1CS;
-    use crate::r1cs::VariableType::{Intermediate, Private, Public};
 
     fn cubic_constraint_system() -> QAP<Fr> {
         // Create constraints for x**3 + x + 5 = 35
@@ -264,6 +302,10 @@ mod tests {
         assert_eq!(pk.h_query.len(), 3, "Incorrect number of h_query elements");
 
         // Expect committed_witnesses = #vars - public - 1 (for 1-based indexing)
-        assert_eq!(pk.committed_witnesses.len(), 4, "Incorrect witness commitments");
+        assert_eq!(
+            pk.committed_witnesses.len(),
+            4,
+            "Incorrect witness commitments"
+        );
     }
 }
