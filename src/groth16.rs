@@ -107,3 +107,163 @@ struct VerificationKey<E: Pairing> {
     /// (β·A_i(τ) + α·B_i(τ) + C_i(τ)) / γ · G1
     committed_statements: Vec<E::G1Affine>,
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bls12_381::{Bls12_381, Fr as F, Fr};
+    use ark_ec::{PrimeGroup};
+    use ark_ff::{One, Zero};
+    use ark_std::UniformRand;
+    use rand::thread_rng;
+    use crate::r1cs::R1CS;
+    use crate::r1cs::VariableType::{Intermediate, Private, Public};
+
+    fn cubic_constraint_system() -> QAP<Fr> {
+        // Create constraints for x**3 + x + 5 = 35
+        let mut r1cs = R1CS::<Fr>::new();
+        r1cs.add_variable("x".to_string(), Private);
+        r1cs.add_variable("x_sq".to_string(), Intermediate);
+        r1cs.add_variable("x_cb".to_string(), Intermediate);
+        r1cs.add_variable("sym_1".to_string(), Intermediate);
+        r1cs.add_variable("~out".to_string(), Public);
+
+        // vars = [~one, ~out, x, x_sq, x_cb, sym_1]
+        // x*x = x_sq
+        let a = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        r1cs.add_constraint(a, b, c);
+
+        // x_sq * x = x_cb
+        let a = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+        ];
+        r1cs.add_constraint(a, b, c);
+
+        // x_cb + x = sym_1
+        let a = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+        ];
+        let b = vec![
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+        ];
+        r1cs.add_constraint(a, b, c);
+
+        // sym_1 + 5 = out
+        let a = vec![
+            Fr::from(5),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::one(),
+        ];
+        let b = vec![
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        let c = vec![
+            Fr::zero(),
+            Fr::one(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+            Fr::zero(),
+        ];
+        r1cs.add_constraint(a, b, c);
+        QAP::from(&r1cs)
+    }
+
+    #[test]
+    fn test_proving_key_generation() {
+        let mut rng = thread_rng();
+
+        let g = <Bls12_381 as Pairing>::G1::generator();
+
+        // Random trapdoor values
+        let trapdoor = TrapDoor {
+            alpha: F::rand(&mut rng),
+            beta: F::rand(&mut rng),
+            gamma: F::rand(&mut rng),
+            delta: F::rand(&mut rng),
+            tau: F::rand(&mut rng),
+        };
+        let qap = cubic_constraint_system();
+        let pk = ProvingKey::<Bls12_381>::new(g, trapdoor, qap);
+
+        // Expect tau_powers = degree(target_poly) = 4
+        assert_eq!(pk.tau_powers.len(), 4, "Incorrect number of tau powers");
+
+        // Expect h_query = degree(target_poly) - 1 = 3
+        assert_eq!(pk.h_query.len(), 3, "Incorrect number of h_query elements");
+
+        // Expect committed_witnesses = #vars - public - 1 (for 1-based indexing)
+        assert_eq!(pk.committed_witnesses.len(), 4, "Incorrect witness commitments");
+    }
+}
