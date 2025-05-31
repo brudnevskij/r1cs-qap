@@ -5,6 +5,7 @@ use ark_ff::{Field, Zero};
 use ark_poly::Polynomial;
 use ark_poly::univariate::DensePolynomial;
 use itertools::izip;
+use std::iter::zip;
 
 struct TrapDoor<F> {
     alpha: F,
@@ -240,8 +241,8 @@ impl<E: Pairing> Proof<E> {
 
         let witness_term: E::G1 = naive_msm(&sigma1.committed_witnesses, &witness_scalars);
 
-        // 6. Compute C = witness_term + h_term + A·s + B_c·s - (r·s·δ)
-        let c: E::G1 = witness_term + h_term + (a * s) + (b_c * s) - (sigma1.delta * r * s);
+        // 6. Compute C = witness_term + h_term + A·s + B_c·r - (r·s·δ)
+        let c: E::G1 = witness_term + h_term + (a * s) + (b_c * r) - (sigma1.delta * r * s);
 
         Proof {
             a: a.into(),
@@ -260,12 +261,36 @@ impl<E: Pairing> Proof<E> {
     }
 }
 
+fn verify<E: Pairing>(crs: &CRS<E>, proof: &Proof<E>, public_input: &[E::ScalarField]) -> bool {
+    let CRS { sigma1, sigma2 } = crs;
+
+    // 1. Compute e(A, B)
+    let lhs = E::pairing(proof.a, proof.b);
+
+    // 2. Compute RHS:
+    // e(α, β)
+    let alpha_beta = E::pairing(sigma1.alpha, sigma2.beta);
+
+    // e(v(x), γ)
+    let v_x: E::G1 = izip!(public_input.iter(), sigma1.committed_statements.iter())
+        .map(|(s, c)| *c * s)
+        .sum();
+
+    let v_gamma = E::pairing(v_x.into(), sigma2.gamma);
+
+    // e(C, δ)
+    let c_delta = E::pairing(proof.c, sigma2.delta);
+
+    // 3. Final check
+    lhs == alpha_beta + v_gamma + c_delta
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::r1cs::R1CS;
     use crate::r1cs::VariableType::{Intermediate, Private, Public};
-    use ark_bls12_381::{Bls12_381, Fr as F, Fr};
+    use ark_bls12_381::{Bls12_381, Fr as F, Fr, G1Projective, G2Projective};
     use ark_ec::{AffineRepr, PrimeGroup};
     use ark_ff::{One, Zero};
     use ark_std::UniformRand;
@@ -391,18 +416,21 @@ mod tests {
         QAP::from(&r1cs)
     }
 
+    fn get_random_trapdoor() -> TrapDoor<F> {
+        let mut rng = thread_rng();
+        TrapDoor {
+            alpha: F::rand(&mut rng),
+            beta: F::rand(&mut rng),
+            gamma: F::rand(&mut rng),
+            delta: F::rand(&mut rng),
+            tau: F::rand(&mut rng),
+        }
+    }
+
     #[test]
     fn test_sigma1_generation() {
-        let mut rng = thread_rng();
         let g1 = <Bls12_381 as Pairing>::G1::generator();
-
-        let trapdoor = TrapDoor {
-            alpha: Fr::rand(&mut rng),
-            beta: Fr::rand(&mut rng),
-            gamma: Fr::rand(&mut rng),
-            delta: Fr::rand(&mut rng),
-            tau: Fr::rand(&mut rng),
-        };
+        let trapdoor = get_random_trapdoor();
 
         let qap = cubic_constraint_system();
         let sigma1 = Sigma1::<Bls12_381>::new(g1, &trapdoor, &qap);
@@ -435,16 +463,8 @@ mod tests {
 
     #[test]
     fn test_sigma2_generation() {
-        let mut rng = thread_rng();
         let g2 = <Bls12_381 as Pairing>::G2::generator();
-
-        let trapdoor = TrapDoor {
-            alpha: Fr::rand(&mut rng),
-            beta: Fr::rand(&mut rng),
-            gamma: Fr::rand(&mut rng),
-            delta: Fr::rand(&mut rng),
-            tau: Fr::rand(&mut rng),
-        };
+        let trapdoor = get_random_trapdoor();
 
         let qap = cubic_constraint_system();
         let sigma2 = Sigma2::<Bls12_381>::new(g2, &trapdoor, &qap);
@@ -458,11 +478,6 @@ mod tests {
 
     #[test]
     fn test_groth16_proof_generation() {
-        use ark_bls12_381::{Bls12_381, Fr as F};
-        use ark_ec::{pairing::Pairing, CurveGroup};
-        use ark_std::UniformRand;
-        use rand::thread_rng;
-
         // 1. Generate a QAP from your example constraint system
         let qap = cubic_constraint_system(); // x^3 + x + 5 = 35
 
@@ -477,13 +492,7 @@ mod tests {
 
         // 3. Create trapdoor (toxic waste)
         let mut rng = thread_rng();
-        let trapdoor = TrapDoor {
-            alpha: F::rand(&mut rng),
-            beta: F::rand(&mut rng),
-            gamma: F::rand(&mut rng),
-            delta: F::rand(&mut rng),
-            tau: F::rand(&mut rng),
-        };
+        let trapdoor = get_random_trapdoor();
 
         // 4. Generate CRS
         let g1 = <Bls12_381 as Pairing>::G1::generator();
@@ -504,5 +513,33 @@ mod tests {
 
         // NOTE: You could add a pairing check here later once a verifier is implemented.
         println!("Proof successfully generated.");
+    }
+
+    #[test]
+    fn test_groth16_verification_success() {
+        let mut rng = thread_rng();
+        let qap = cubic_constraint_system();
+        let g1 = G1Projective::generator();
+        let g2 = G2Projective::generator();
+        let trapdoor = get_random_trapdoor();
+        let crs = CRS::<Bls12_381>::new(g1,g2, &trapdoor, &qap);
+
+        // Valid witness: x = 2 → x^3 + x + 5 = 15
+        let x = Fr::from(2u64);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + Fr::from(5u64);
+        let witness = vec![Fr::one(), out, x, x_sq, x_cb, sym_1];
+
+        assert!(qap.is_satisfied(&witness));
+
+        let r = Fr::rand(&mut rng);
+        let s = Fr::rand(&mut rng);
+        let proof = Proof::<Bls12_381>::new(r,s,&crs, &qap, &witness);
+        let public_input = vec![Fr::one(), out]; // ~one, ~out
+
+        let verified = verify::<Bls12_381>(&crs,&proof,&public_input);
+        assert!(verified, "Valid proof did not verify");
     }
 }
