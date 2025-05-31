@@ -115,8 +115,8 @@ impl<E: Pairing> VerificationKey<E> {
     pub fn new(
         g1: E::G1,
         g2: E::G2,
-        trap_door: TrapDoor<E::ScalarField>,
-        qap: QAP<E::ScalarField>,
+        trap_door: &TrapDoor<E::ScalarField>,
+        qap: &QAP<E::ScalarField>,
     ) -> VerificationKey<E> {
         let TrapDoor {
             alpha,
@@ -129,10 +129,10 @@ impl<E: Pairing> VerificationKey<E> {
         let gamma_abc_g1 = izip!(qap.a.iter(), qap.b.iter(), qap.c.iter())
             .take(qap.public_variables_count + 1)
             .map(|(a, b, c)| {
-                let a_tau = beta * a.evaluate(&tau);
-                let b_tau = alpha * b.evaluate(&tau);
-                let c_tau = c.evaluate(&tau);
-                let coeff = (a_tau + b_tau + c_tau) / gamma;
+                let a_tau = *beta * a.evaluate(tau);
+                let b_tau = *alpha * b.evaluate(tau);
+                let c_tau = c.evaluate(tau);
+                let coeff = (a_tau + b_tau + c_tau) / *gamma;
                 (g1 * coeff).into()
             })
             .collect();
@@ -308,4 +308,37 @@ mod tests {
             "Incorrect witness commitments"
         );
     }
+
+    #[test]
+    fn test_verification_key_generation() {
+        let mut rng = thread_rng();
+
+        // Generator elements
+        let g1 = <Bls12_381 as Pairing>::G1::generator();
+        let g2 = <Bls12_381 as Pairing>::G2::generator();
+
+        // Random trapdoor for trusted setup
+        let trapdoor = TrapDoor {
+            alpha: F::rand(&mut rng),
+            beta: F::rand(&mut rng),
+            gamma: F::rand(&mut rng),
+            delta: F::rand(&mut rng),
+            tau: F::rand(&mut rng),
+        };
+
+        // Build cubic constraint system → QAP
+        let qap = cubic_constraint_system();
+
+        // Construct verification key
+        let vk = VerificationKey::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
+
+        // Check that the number of gamma_abc elements matches number of public vars + 1 (for ~1)
+        let expected_gamma_abc_len = qap.public_variables_count + 1;
+        assert_eq!(
+            vk.gamma_abc_g1.len(),
+            expected_gamma_abc_len,
+            "gamma_abc_g1 should have one entry per public variable + 1"
+        );
+    }
+
 }
