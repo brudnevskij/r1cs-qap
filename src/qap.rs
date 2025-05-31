@@ -7,13 +7,25 @@ use ark_poly::univariate::DensePolynomial;
 use ark_std::Zero;
 use std::ops::Add;
 
+/// QAP structure holding A(x), B(x), C(x) polynomials for each variable,
+/// and the vanishing polynomial Z(x) as `target_poly`.
 pub struct QAP<F: Field> {
+    /// Number of public input variables (needed for indexing)
     pub public_variables_count: usize,
+
+    /// Z(x): vanishing polynomial over constraint indices
     pub target_poly: DensePolynomial<F>,
+
+    /// A_i(x) polynomials
     pub a: Vec<DensePolynomial<F>>,
+
+    /// B_i(x) polynomials
     pub b: Vec<DensePolynomial<F>>,
+
+    /// C_i(x) polynomials
     pub c: Vec<DensePolynomial<F>>,
 }
+
 impl<F: Field> QAP<F> {
     pub fn new(target_poly: DensePolynomial<F>) -> QAP<F> {
         Self {
@@ -25,6 +37,10 @@ impl<F: Field> QAP<F> {
         }
     }
 
+    /// Computes the QAP identity polynomial:
+    /// P(x) = A(x) · B(x) - C(x),
+    /// where A(x), B(x), C(x) are linear combinations of constraint polynomials
+    /// weighted by witness values.
     pub fn compute_p(&self, witness: &[F]) -> DensePolynomial<F> {
         let mut a_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
         let mut b_polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
@@ -46,6 +62,8 @@ impl<F: Field> QAP<F> {
         a_polynomial.naive_mul(&b_polynomial) - c_polynomial
     }
 
+    /// Computes the quotient polynomial H(x) such that:
+    /// A(x)·B(x) - C(x) = H(x) · Z(x)
     pub fn compute_h(&self, witness: &[F]) -> DensePolynomial<F> {
         let p = self.compute_p(witness);
         let d = DenseOrSparsePolynomial::from(p);
@@ -55,6 +73,8 @@ impl<F: Field> QAP<F> {
         h
     }
 
+    /// Checks whether the witness satisfies the QAP by confirming:
+    /// A(x)·B(x) - C(x) ≡ 0 mod Z(x)
     pub fn is_satisfied(&self, witness: &[F]) -> bool {
         let p = self.compute_p(witness);
         let d = DenseOrSparsePolynomial::from(p);
@@ -65,6 +85,8 @@ impl<F: Field> QAP<F> {
     }
 }
 
+/// Constructs the vanishing polynomial Z(x) = ∏(x - r_i)
+/// where r_i are the roots (typically 0..n-1)
 pub fn get_vanishing_polynomial<F: Field>(roots: Vec<F>) -> DensePolynomial<F> {
     let mut polynomial = DensePolynomial::from_coefficients_vec(vec![F::one()]);
 
@@ -75,6 +97,9 @@ pub fn get_vanishing_polynomial<F: Field>(roots: Vec<F>) -> DensePolynomial<F> {
     polynomial
 }
 
+/// Converts an R1CS instance to QAP by:
+/// 1. Interpolating A, B, C values over Lagrange basis at each constraint index
+/// 2. Constructing Z(x) = ∏(x - i) for all constraint indices
 impl<F: Field> From<&R1CS<F>> for QAP<F> {
     fn from(value: &R1CS<F>) -> Self {
         let mut a = vec![];
@@ -82,6 +107,8 @@ impl<F: Field> From<&R1CS<F>> for QAP<F> {
         let mut c = vec![];
 
         for var_index in 0..value.variables.len() {
+            // For each variable, collect its coefficients at each constraint index
+            // and interpolate into a polynomial using Lagrange interpolation
             let mut a_domain_points = vec![];
             let mut a_values = vec![];
 
@@ -120,10 +147,14 @@ impl<F: Field> From<&R1CS<F>> for QAP<F> {
     }
 }
 
+/// Constructs a Lagrange interpolation polynomial through given points (xs[i], ys[i])
+/// Returns a polynomial f such that f(xs[i]) = ys[i] for all i
 fn interpolate_lagrange<F: Field>(xs: &[F], ys: &[F]) -> DensePolynomial<F> {
     let mut polynomial = DensePolynomial::from_coefficients_vec(vec![F::zero()]);
 
     for (i, &xi) in xs.iter().enumerate() {
+        // Construct L_i(x) = ∏_{j ≠ i} (x - xj) / (xi - xj)
+        // Then scale it by ys[i] and sum all i
         let mut buffer_poly = DensePolynomial::from_coefficients_vec(vec![F::one()]);
 
         for (j, &xj) in xs.iter().enumerate() {
