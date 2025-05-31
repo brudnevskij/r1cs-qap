@@ -238,10 +238,10 @@ impl<E: Pairing> Proof<E> {
             .cloned()
             .collect();
 
-        let witness_term = naive_msm(&sigma1.committed_witnesses, &witness_scalars);
+        let witness_term: E::G1 = naive_msm(&sigma1.committed_witnesses, &witness_scalars);
 
         // 6. Compute C = witness_term + h_term + A·s + B_c·s - (r·s·δ)
-        let c = witness_term + h_term + (a * s) + (b_c * s) - (sigma1.delta * r * s);
+        let c: E::G1 = witness_term + h_term + (a * s) + (b_c * s) - (sigma1.delta * r * s);
 
         Proof {
             a: a.into(),
