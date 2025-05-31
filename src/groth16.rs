@@ -8,17 +8,16 @@ use itertools::izip;
 
 /// Structured reference string (toxic waste) used to generate the CRS.
 /// Only needed during setup and must be discarded afterward.
-struct TrapDoor<F> {
-    alpha: F,
-    beta: F,
-    gamma: F,
-    delta: F,
-    tau: F,
+pub struct TrapDoor<F> {
+    pub alpha: F,
+    pub beta: F,
+    pub gamma: F,
+    pub delta: F,
+    pub tau: F,
 }
 
-
 /// Common Reference String split into Sigma1 and Sigma2 components according to paper.
-struct CRS<E: Pairing> {
+pub struct CRS<E: Pairing> {
     sigma1: Sigma1<E>,
     sigma2: Sigma2<E>,
 }
@@ -183,7 +182,7 @@ pub fn naive_msm<G: CurveGroup>(bases: &[G::Affine], scalars: &[G::ScalarField])
     izip!(scalars, bases).map(|(s, b)| *b * s).sum()
 }
 
-struct Proof<E: Pairing> {
+pub struct Proof<E: Pairing> {
     a: E::G1Affine,
     b: E::G2Affine,
     c: E::G1Affine,
@@ -271,7 +270,7 @@ impl<E: Pairing> Proof<E> {
     }
 }
 
-fn verify<E: Pairing>(crs: &CRS<E>, proof: &Proof<E>, public_input: &[E::ScalarField]) -> bool {
+pub fn verify<E: Pairing>(crs: &CRS<E>, proof: &Proof<E>, public_input: &[E::ScalarField]) -> bool {
     let CRS { sigma1, sigma2 } = crs;
 
     // 1. Compute e(A, B)
@@ -532,7 +531,7 @@ mod tests {
         let g1 = G1Projective::generator();
         let g2 = G2Projective::generator();
         let trapdoor = get_random_trapdoor();
-        let crs = CRS::<Bls12_381>::new(g1,g2, &trapdoor, &qap);
+        let crs = CRS::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
 
         // Valid witness: x = 2 → x^3 + x + 5 = 15
         let x = Fr::from(2u64);
@@ -546,10 +545,10 @@ mod tests {
 
         let r = Fr::rand(&mut rng);
         let s = Fr::rand(&mut rng);
-        let proof = Proof::<Bls12_381>::new(r,s,&crs, &qap, &witness);
+        let proof = Proof::<Bls12_381>::new(r, s, &crs, &qap, &witness);
         let public_input = vec![Fr::one(), out]; // ~one, ~out
 
-        let verified = verify::<Bls12_381>(&crs,&proof,&public_input);
+        let verified = verify::<Bls12_381>(&crs, &proof, &public_input);
         assert!(verified, "Valid proof did not verify");
     }
 
@@ -560,7 +559,7 @@ mod tests {
         let g1 = G1Projective::generator();
         let g2 = G2Projective::generator();
         let trapdoor = get_random_trapdoor();
-        let crs = CRS::<Bls12_381>::new(g1,g2, &trapdoor, &qap);
+        let crs = CRS::<Bls12_381>::new(g1, g2, &trapdoor, &qap);
 
         // Valid witness: x = 2 → x^3 + x + 5 = 15
         let x = Fr::from(2u64);
@@ -572,10 +571,10 @@ mod tests {
 
         let r = Fr::rand(&mut rng);
         let s = Fr::rand(&mut rng);
-        let proof = Proof::<Bls12_381>::new(r,s,&crs, &qap, &witness);
+        let proof = Proof::<Bls12_381>::new(r, s, &crs, &qap, &witness);
         let public_input = vec![Fr::one(), out]; // ~one, ~out
 
-        let verified = verify::<Bls12_381>(&crs,&proof,&public_input);
+        let verified = verify::<Bls12_381>(&crs, &proof, &public_input);
         assert!(!verified, "Valid proof did not verify");
     }
 }

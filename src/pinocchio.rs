@@ -202,12 +202,12 @@ impl<E: Pairing> VerificationKey<E> {
     }
 }
 
-struct CRS<E: Pairing> {
-    evaluation_key: EvaluationKey<E>,
-    verification_key: VerificationKey<E>,
+pub struct CRS<E: Pairing> {
+    pub evaluation_key: EvaluationKey<E>,
+    pub verification_key: VerificationKey<E>,
 }
 impl<E: Pairing> CRS<E> {
-    fn new(
+    pub fn new(
         qap: &QAP<E::ScalarField>,
         toxic_waste: &Trapdoor<E::ScalarField>,
         g1: E::G1,
@@ -315,7 +315,7 @@ impl<E: Pairing> Proof<E> {
 /// 1. QAP divisibility check
 /// 2. Linear combination (alpha) checks
 /// 3. Coefficient pairing check
-fn verify<E: Pairing>(
+pub fn verify<E: Pairing>(
     proof: Proof<E>,
     verification_key: VerificationKey<E>,
     public_input: &[E::ScalarField],
