@@ -542,4 +542,30 @@ mod tests {
         let verified = verify::<Bls12_381>(&crs,&proof,&public_input);
         assert!(verified, "Valid proof did not verify");
     }
+
+    #[test]
+    fn test_groth16_verification_fail() {
+        let mut rng = thread_rng();
+        let qap = cubic_constraint_system();
+        let g1 = G1Projective::generator();
+        let g2 = G2Projective::generator();
+        let trapdoor = get_random_trapdoor();
+        let crs = CRS::<Bls12_381>::new(g1,g2, &trapdoor, &qap);
+
+        // Valid witness: x = 2 → x^3 + x + 5 = 15
+        let x = Fr::from(2u64);
+        let x_sq = x * x;
+        let x_cb = x_sq * x;
+        let sym_1 = x_cb + x;
+        let out = sym_1 + Fr::from(5u64);
+        let witness = vec![Fr::one(), out, x, x, x_cb, sym_1];
+
+        let r = Fr::rand(&mut rng);
+        let s = Fr::rand(&mut rng);
+        let proof = Proof::<Bls12_381>::new(r,s,&crs, &qap, &witness);
+        let public_input = vec![Fr::one(), out]; // ~one, ~out
+
+        let verified = verify::<Bls12_381>(&crs,&proof,&public_input);
+        assert!(!verified, "Valid proof did not verify");
+    }
 }
