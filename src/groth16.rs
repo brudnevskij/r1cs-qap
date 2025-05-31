@@ -5,8 +5,9 @@ use ark_ff::{Field, Zero};
 use ark_poly::Polynomial;
 use ark_poly::univariate::DensePolynomial;
 use itertools::izip;
-use std::iter::zip;
 
+/// Structured reference string (toxic waste) used to generate the CRS.
+/// Only needed during setup and must be discarded afterward.
 struct TrapDoor<F> {
     alpha: F,
     beta: F,
@@ -15,6 +16,8 @@ struct TrapDoor<F> {
     tau: F,
 }
 
+
+/// Common Reference String split into Sigma1 and Sigma2 components according to paper.
 struct CRS<E: Pairing> {
     sigma1: Sigma1<E>,
     sigma2: Sigma2<E>,
@@ -76,6 +79,7 @@ impl<E: Pairing> Sigma1<E> {
 
         let t_at_tau = qap.target_poly.evaluate(&tau);
 
+        // Compute G1 powers of tau up to the target polynomial degree.
         let tau_powers: Vec<_> = (0..=qap.target_poly.degree() - 1)
             .map(|i| {
                 let tau_i = tau.pow([i as u64]);
@@ -83,6 +87,8 @@ impl<E: Pairing> Sigma1<E> {
             })
             .collect();
 
+        // Commit witness polynomials: (βA_i(τ) + αB_i(τ) + C_i(τ)) / δ · G1
+        // These correspond to the private parts of the computation.
         let committed_witnesses: Vec<_> = izip!(qap.a.iter(), qap.b.iter(), qap.c.iter())
             .skip(qap.public_variables_count + 1)
             .map(|(a, b, c)| {
@@ -94,6 +100,8 @@ impl<E: Pairing> Sigma1<E> {
             })
             .collect();
 
+        // Commit public input polynomials: (βA_i(τ) + αB_i(τ) + C_i(τ)) / γ · G1
+        // These correspond to the statement (inputs known to verifier).
         let committed_statements = izip!(qap.a.iter(), qap.b.iter(), qap.c.iter())
             .take(qap.public_variables_count + 1)
             .map(|(a, b, c)| {
@@ -105,6 +113,8 @@ impl<E: Pairing> Sigma1<E> {
             })
             .collect();
 
+        // Commitments to H(τ) = (A(τ)·B(τ) - C(τ)) / Z(τ), used in the quotient check.
+        // The verifier uses these to ensure the arithmetic circuit was satisfied.
         let h_query: Vec<_> = (0..=qap.target_poly.degree() - 2)
             .map(|i| {
                 let scaled = tau.pow([i as u64]) * t_at_tau / delta;
@@ -228,7 +238,7 @@ impl<E: Pairing> Proof<E> {
 
         let b_c = sigma1.beta + b_query_g1 + sigma1.delta * s;
 
-        // 4. Compute H(τ)
+        // Step 4: Compute H(τ) = (A(τ)·B(τ) - C(τ)) / Z(τ)
         let h_poly = qap.compute_h(assignment);
         let h_term = Self::eval_poly_at_tau::<E::G1>(h_poly, &sigma1.h_query);
 
