@@ -1,24 +1,24 @@
-# 💡 R1CS-to-QAP to Pinocchio Prover — A zk-SNARK Study Project
+# 💡 R1CS → QAP → Pinocchio → Groth16, A zk-SNARK Study Project
 
-This project implements the core proving pipeline used in zk-SNARKs, progressing from **Rank-1 Constraint Systems (R1CS)** to **Quadratic Arithmetic Programs (QAP)** to **Pinocchio**, and ultimately toward the **Groth16** SNARK protocol..
+This project implements the core proving pipeline used in zk-SNARKs, progressing step-by-step from **Rank-1 Constraint Systems (R1CS)** to **Quadratic Arithmetic Programs (QAP)**, to **Pinocchio**, and finally toward the **Groth16** proving system.
 
 ---
-
 ## 🚀 Features
 
 - ✅ R1CS representation with variable and constraint definitions
 - ✅ Conversion from R1CS → QAP using Lagrange interpolation
-- ✅ Vanishing polynomial generation
-- ✅ QAP witness satisfaction checking
-- ✅ Pinocchio-style CRS generation (Evaluation & Verification Keys)
-- ✅ zk-SNARK proof generation and verification (Pinocchio)
-- ✅ Fully tested with toy circuits (e.g., cubic)
+- ✅ Pinocchio implementation
+- ✅ Groth16 implementation
+- ✅ Tested with toy circuits (e.g., cubic polynomial)
 
 ---
 
 ## 🔬 Background
 
-This project is inspired by [Vitalik Buterin’s blog post on QAPs](https://medium.com/@VitalikButerin/quadratic-arithmetic-programs-from-zero-to-hero-f6d558cea649) and aims to provide a clean, modular Rust implementation using `arkworks` libraries.
+This project was created as a deep learning exercise to understand and implement the Groth16 zk-SNARK proving system from the ground up. Starting with the formulation of arithmetic circuits and their transformation into Rank-1 Constraint Systems (R1CS), I then implemented the conversion to Quadratic Arithmetic Programs (QAP) using Lagrange interpolation.
+From there, I built the Pinocchio protocol to understand how pairing-based zk-SNARKs work, and finally extended it to support the Groth16 protocol,
+optimizing proof generation and verification with a compressed Common Reference String (CRS). The goal was to reconstruct the full proving pipeline almost from scratch using the Rust arkworks ecosystem,
+with a focus on clarity, correctness, and hands-on understanding of each transformation layer.
 
 > _"The idea behind zk-SNARKs is to transform computation into a form where proving and verifying correctness can be done with polynomials, pairings, and commitments."_
 
@@ -27,7 +27,7 @@ This project is inspired by [Vitalik Buterin’s blog post on QAPs](https://medi
 ## 📐 Architecture Overview
 
 ```
-  Circuit (e.g., x³ + x + 5 = 35)
+  Arithmetic Circuit (e.g., x³ + x + 5 = 35)
         ↓
       R1CS
         ↓
@@ -37,13 +37,9 @@ This project is inspired by [Vitalik Buterin’s blog post on QAPs](https://medi
         ↓
      Compute H(x) = (A·B - C)/Z
         ↓
- Commitments & Pairing-based Verifier (Pinocchio)
+  → Pinocchio: Pairing-based proof with 3 pairings
+  → Groth16: Optimized zk-SNARK with 1 pairing + compressed CRS
 ```
-
----
-
-## 🧱 Planned Extensions
-- [ ] Transition to Groth16 (compressed CRS, single pairing check)
 
 ---
 
@@ -57,16 +53,6 @@ This project is inspired by [Vitalik Buterin’s blog post on QAPs](https://medi
 
 ---
 
-## 🧪 Running Tests
-
-```bash
-cargo test
-```
-
-Tests include:
-- Basic cubic constraint system
-- Proof soundness check (invalid proofs fail)
-- CRS key generation checks
 
 ---
 
@@ -74,12 +60,6 @@ Tests include:
 
 - [Vitalik Buterin – QAPs From Zero to Hero](https://medium.com/@VitalikButerin/quadratic-arithmetic-programs-from-zero-to-hero-f6d558cea649)
 - [The MoonMath Manual](https://github.com/LeastAuthority/moonmath-manual)
-- [zk-SNARKs in Rust by arkworks](https://arkworks.rs)
-
----
-
-## 🛠️ Author
-
-Built as a study project by a cryptography student, aiming to fully understand zkSNARKs from the ground up.
+- [arkworks zk-SNARKs in Rust](https://arkworks.rs)
 
 ---
