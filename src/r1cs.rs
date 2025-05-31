@@ -1,18 +1,21 @@
 use ark_ff::Field;
 use std::fmt::{Display, Formatter};
 
+/// Represents a single R1CS constraint: (a · w) * (b · w) = (c · w)
 pub struct Constraint<F: Field> {
     pub a: Vec<F>,
     pub b: Vec<F>,
     pub c: Vec<F>,
 }
 
+/// Distinguishes between different kinds of variables in the circuit
 pub enum VariableType {
     Public,
     Intermediate,
     Private,
 }
 
+/// A complete R1CS system with all constraints and variable metadata
 pub struct R1CS<F: Field> {
     pub constraints: Vec<Constraint<F>>,
     pub variables: Vec<String>,
@@ -20,6 +23,8 @@ pub struct R1CS<F: Field> {
 }
 
 impl<F: Field> R1CS<F> {
+    /// Initializes a new R1CS instance.
+    /// The `~one` variable (constant 1) is inserted at index 0 by default.
     pub fn new() -> Self {
         Self {
             constraints: vec![],
@@ -28,6 +33,8 @@ impl<F: Field> R1CS<F> {
         }
     }
 
+    /// Adds a new variable to the R1CS and returns its index.
+    /// Public variables are inserted right after `~one`, maintaining order.
     pub fn add_variable(&mut self, name: String, variable_type: VariableType) -> usize {
         match variable_type {
             VariableType::Public => {
@@ -42,10 +49,12 @@ impl<F: Field> R1CS<F> {
         }
     }
 
+    /// Adds a constraint of the form (a · w) * (b · w) = (c · w)
     pub fn add_constraint(&mut self, a: Vec<F>, b: Vec<F>, c: Vec<F>) {
         self.constraints.push(Constraint { a, b, c });
     }
 
+    /// Checks whether a given witness vector satisfies all constraints.
     pub fn is_satisfied(&self, witness: &[F]) -> bool {
         for constraint in &self.constraints {
             let a = inner_product(&constraint.a, witness);
@@ -60,10 +69,13 @@ impl<F: Field> R1CS<F> {
     }
 }
 
+/// Computes the inner product of two vectors
 fn inner_product<F: Field>(a: &[F], b: &[F]) -> F {
     a.iter().zip(b).map(|(x, y)| (*x) * (*y)).sum()
 }
 
+/// Helper for Display: formats one side (A, B, or C) of a constraint
+/// into a human-readable algebraic expression.
 fn format_side<F: Field>(coefficients: &[F], variables: &Vec<String>) -> String {
     let mut side = vec![];
 
@@ -84,6 +96,8 @@ fn format_side<F: Field>(coefficients: &[F], variables: &Vec<String>) -> String 
     format!("({})", side.join(" + "))
 }
 
+/// Pretty-print the R1CS as equations like:
+/// (1 + x) * (y) = (z)
 impl<F: Field> Display for R1CS<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut r1cs_equations: Vec<String> = vec![];
