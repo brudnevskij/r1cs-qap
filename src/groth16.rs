@@ -1,7 +1,9 @@
 use crate::qap::QAP;
+use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
-use ark_ff::Field;
+use ark_ff::{Field, Zero};
 use ark_poly::Polynomial;
+use ark_poly::univariate::DensePolynomial;
 use itertools::izip;
 
 struct TrapDoor<F> {
@@ -163,6 +165,98 @@ impl<E: Pairing> Sigma2<E> {
             gamma: (g * gamma).into(),
             tau_powers,
         }
+    }
+}
+
+pub fn naive_msm<G: CurveGroup>(bases: &[G::Affine], scalars: &[G::ScalarField]) -> G {
+    izip!(scalars, bases).map(|(s, b)| *b * s).sum()
+}
+
+struct Proof<E: Pairing> {
+    a: E::G1Affine,
+    b: E::G2Affine,
+    c: E::G1Affine,
+}
+
+impl<E: Pairing> Proof<E> {
+    pub fn new(
+        r: E::ScalarField,
+        s: E::ScalarField,
+        crs: &CRS<E>,
+        qap: &QAP<E::ScalarField>,
+        assignment: &[E::ScalarField],
+    ) -> Proof<E> {
+        let CRS { sigma1, sigma2 } = crs;
+
+        // 1. Compute A = α + Σ a_i * u_i(τ) + rδ
+        let a_query = qap
+            .a
+            .iter()
+            .zip(assignment)
+            .map(|(poly, coeff)| {
+                let eval = Self::eval_poly_at_tau::<E::G1>(poly.clone(), &sigma1.tau_powers);
+                eval * *coeff
+            })
+            .sum::<E::G1>();
+
+        let a = sigma1.alpha + a_query + sigma1.delta * r;
+
+        // 2. Compute B in G2: β + Σ b_i * v_i(τ) + sδ
+        let b_query_g2 = qap
+            .b
+            .iter()
+            .zip(assignment)
+            .map(|(poly, coeff)| {
+                let eval = Self::eval_poly_at_tau::<E::G2>(poly.clone(), &sigma2.tau_powers);
+                eval * *coeff
+            })
+            .sum::<E::G2>();
+
+        let b = sigma2.beta + b_query_g2 + sigma2.delta * s;
+
+        // 3. Compute B in G1 (needed for C): β + Σ b_i * v_i(τ) + sδ
+        let b_query_g1 = qap
+            .b
+            .iter()
+            .zip(assignment)
+            .map(|(poly, coeff)| {
+                let eval = Self::eval_poly_at_tau::<E::G1>(poly.clone(), &sigma1.tau_powers);
+                eval * *coeff
+            })
+            .sum::<E::G1>();
+
+        let b_c = sigma1.beta + b_query_g1 + sigma1.delta * s;
+
+        // 4. Compute H(τ)
+        let h_poly = qap.compute_h(assignment);
+        let h_term = Self::eval_poly_at_tau::<E::G1>(h_poly, &sigma1.h_query);
+
+        // 5. Compute witness commitments
+        let witness_scalars: Vec<_> = assignment
+            .iter()
+            .skip(qap.public_variables_count + 1)
+            .cloned()
+            .collect();
+
+        let witness_term = naive_msm(&sigma1.committed_witnesses, &witness_scalars);
+
+        // 6. Compute C = witness_term + h_term + A·s + B_c·s - (r·s·δ)
+        let c = witness_term + h_term + (a * s) + (b_c * s) - (sigma1.delta * r * s);
+
+        Proof {
+            a: a.into(),
+            b: b.into(),
+            c: c.into(),
+        }
+    }
+
+    fn eval_poly_at_tau<G: CurveGroup>(
+        poly: DensePolynomial<G::ScalarField>,
+        tau_powers: &[G::Affine],
+    ) -> G {
+        izip!(poly.coeffs.iter(), tau_powers)
+            .map(|(&x, &tau)| tau * x)
+            .sum()
     }
 }
 
@@ -339,7 +433,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_sigma2_generation() {
         let mut rng = thread_rng();
@@ -362,5 +455,4 @@ mod tests {
             "sigma2 tau powers should match target poly degree"
         );
     }
-
 }
